@@ -12,6 +12,7 @@ export function Header() {
   const [legacyToken, setLegacyToken] = useState("");
   const isAdmin = pathname.startsWith("/admin");
   const isPesquisa = pathname.startsWith("/pesquisa");
+  const isLogin = pathname.startsWith("/login");
   const [isLogged, setIsLogged] = useState(false);
 
   useEffect(() => {
@@ -112,11 +113,11 @@ export function Header() {
                 <Link href={navHref.gestao} className="header-action">
                   Gestão
                 </Link>
-              ) : (
+              ) : !isLogin ? (
                 <Link href="/login" className="header-action">
                   Entrar
                 </Link>
-              )}
+              ) : null}
             </>
           )}
         </nav>

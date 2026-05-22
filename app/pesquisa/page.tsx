@@ -1,4 +1,3 @@
-import Image from "next/image";
 import Link from "next/link";
 import { Header } from "@/components/Header";
 import { audiences } from "@/lib/survey-config";
@@ -8,37 +7,17 @@ export default function PesquisaPage() {
     <main>
       <Header />
 
-      <section className="mx-auto max-w-6xl px-5 py-8">
-        <div className="grid gap-6 md:grid-cols-[1fr_260px] md:items-center">
-          <div>
-            <p className="label-pill-gold">Diagnóstico inicial</p>
-            <h1 className="brand-gradient-text mt-4 text-4xl font-black md:text-5xl">
-              Escolha o público da pesquisa
-            </h1>
-            <p className="mt-4 max-w-3xl leading-8 text-slate-200">
-              Cada trilha combina perguntas comuns com perguntas específicas.
-              Todas as perguntas indicam se são de escolha única, múltipla escolha
-              ou texto livre, com espaço para comentário opcional quando fizer sentido.
-            </p>
-          </div>
-
-          <div className="card flex items-center gap-4 p-4">
-            <div className="brand-logo-frame relative h-16 w-16 shrink-0 overflow-hidden rounded-2xl">
-              <Image
-                src="/logo-jpe.png"
-                alt="Logo Jornada Personal Extrema"
-                fill
-                sizes="64px"
-                className="object-contain p-1"
-              />
-            </div>
-            <div>
-              <p className="text-sm font-black text-white">Jornada Personal Extrema</p>
-              <p className="mt-1 text-xs font-bold uppercase tracking-[0.18em] text-emerald-300">
-                Diego Montagnini
-              </p>
-            </div>
-          </div>
+      <section className="mx-auto max-w-6xl px-5 py-8 sm:py-10">
+        <div className="max-w-4xl">
+          <p className="label-pill-gold">Diagnóstico inicial</p>
+          <h1 className="brand-gradient-text mt-4 text-4xl font-black leading-tight md:text-5xl">
+            Escolha o público da pesquisa
+          </h1>
+          <p className="mt-4 max-w-3xl leading-8 text-slate-200">
+            Cada trilha combina perguntas comuns com perguntas específicas.
+            Todas as perguntas indicam se são de escolha única, múltipla escolha
+            ou texto livre, com espaço para comentário opcional quando fizer sentido.
+          </p>
         </div>
 
         <div className="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
