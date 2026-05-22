@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f7f5ef;
+  --foreground: #1c1917;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+.card {
+  border: 1px solid rgba(41, 37, 36, 0.12);
+  background: rgba(255, 255, 255, 0.82);
+  border-radius: 22px;
+  box-shadow: 0 18px 45px rgba(28, 25, 23, 0.08);
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #1c1917;
+  color: #fff;
+  padding: 0.8rem 1.2rem;
+  font-weight: 700;
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgba(41, 37, 36, 0.18);
+  background: #fff;
+  color: #1c1917;
+  padding: 0.8rem 1.2rem;
+  font-weight: 700;
+}
+
+.input, .textarea, .select {
+  width: 100%;
+  border-radius: 14px;
+  border: 1px solid rgba(41, 37, 36, 0.18);
+  padding: 0.8rem 0.9rem;
+  background: #fff;
+  outline: none;
+}
+
+.label-pill {
+  display: inline-flex;
+  border-radius: 999px;
+  background: #f0ebe2;
+  color: #57534e;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.25rem 0.55rem;
+}
