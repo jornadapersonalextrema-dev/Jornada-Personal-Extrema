@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
+import { isFollowupOverdue, isWithoutRecentMessage } from "@/lib/automation-rules";
+import { conversionStatusFromLeadStatus, getConversionRate, isConvertedLead } from "@/lib/funnel";
 import { isValidAdminToken, createServiceClient } from "@/lib/supabase";
+import type { LeadSummary } from "@/lib/types";
 
 function countBy<T extends string>(items: T[]) {
   return items.reduce<Record<string, number>>((acc, item) => {
@@ -7,6 +10,9 @@ function countBy<T extends string>(items: T[]) {
     return acc;
   }, {});
 }
+
+const leadSelect =
+  "id,audience_slug,name,whatsapp,detected_profile,interest_level,urgency_score,lead_status,priority,next_contact_at,internal_notes,delivered_offer,last_message_at,converted_at,conversion_status,program_suggested,followup_count,last_followup_suggestion,weekly_report_bucket,lost_reason,created_at";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -18,16 +24,16 @@ export async function GET(request: Request) {
   const supabase = createServiceClient();
   const { data: responses, error } = await supabase
     .from("survey_responses")
-    .select(
-      "id,audience_slug,name,whatsapp,detected_profile,interest_level,urgency_score,lead_status,priority,next_contact_at,internal_notes,delivered_offer,last_message_at,created_at",
-    )
+    .select(leadSelect)
     .order("created_at", { ascending: false });
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const ids = (responses ?? []).map((item) => item.id);
+  const leads = (responses ?? []) as LeadSummary[];
+  const ids = leads.map((item) => item.id);
+
   const { data: answers } = ids.length
     ? await supabase
         .from("survey_answers")
@@ -45,22 +51,46 @@ export async function GET(request: Request) {
     .filter((answer) => answer.comment)
     .slice(0, 30);
 
-  const overdueCount = (responses ?? []).filter((response) => {
-    if (!response.next_contact_at) return false;
-    return new Date(response.next_contact_at).getTime() < Date.now();
-  }).length;
+  const overdueCount = leads.filter(isFollowupOverdue).length;
+  const noMessageSevenDays = leads.filter((lead) => isWithoutRecentMessage(lead, 7)).length;
+  const converted = leads.filter(isConvertedLead).length;
+
+  const normalizedConversionStatuses = leads.map((lead) =>
+    (lead.conversion_status ?? conversionStatusFromLeadStatus(lead.lead_status)) as string,
+  );
+
+  const byAudience = countBy(leads.map((item) => item.audience_slug as string));
+  const conversionByAudience = Object.fromEntries(
+    Object.entries(byAudience).map(([audienceSlug, total]) => {
+      const audienceLeads = leads.filter((lead) => lead.audience_slug === audienceSlug);
+      const audienceConverted = audienceLeads.filter(isConvertedLead).length;
+      return [
+        audienceSlug,
+        {
+          total,
+          converted: audienceConverted,
+          rate: getConversionRate(total, audienceConverted),
+        },
+      ];
+    }),
+  );
 
   return NextResponse.json({
-    total: responses?.length ?? 0,
-    byAudience: countBy((responses ?? []).map((item) => item.audience_slug as string)),
-    byInterest: countBy((responses ?? []).map((item) => item.interest_level as string)),
-    byPriority: countBy((responses ?? []).map((item) => (item.priority ?? "media") as string)),
+    total: leads.length,
+    byAudience,
+    byInterest: countBy(leads.map((item) => item.interest_level as string)),
+    byPriority: countBy(leads.map((item) => (item.priority ?? "media") as string)),
+    byConversionStatus: countBy(normalizedConversionStatuses),
     overdueCount,
+    noMessageSevenDays,
+    convertedCount: converted,
+    conversionRate: getConversionRate(leads.length, converted),
+    conversionByAudience,
     mostMarked: Object.entries(countBy(flatAnswers as string[]))
       .sort((a, b) => b[1] - a[1])
       .slice(0, 12),
-    recentResponses: responses ?? [],
+    recentResponses: leads,
     comments,
-    meetingSummary: `Até o momento, a pesquisa recebeu ${responses?.length ?? 0} respostas. Os públicos e dores mais frequentes devem orientar a primeira oferta gratuita e o primeiro programa piloto da Jornada Personal Extrema. Há ${overdueCount} lead(s) com próximo contato vencido para priorizar.`,
+    meetingSummary: `Até o momento, a pesquisa recebeu ${leads.length} respostas. Há ${overdueCount} lead(s) com próximo contato vencido, ${noMessageSevenDays} lead(s) sem mensagem recente e ${converted} conversão(ões). Use o dashboard semanal para priorizar contatos, validar quais públicos convertem melhor e manter a Jornada Personal Extrema fora do mar vermelho do treino genérico.`,
   });
 }

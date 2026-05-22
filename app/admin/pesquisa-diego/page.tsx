@@ -23,6 +23,9 @@ type Summary = {
   byInterest: Record<string, number>;
   byPriority?: Record<string, number>;
   overdueCount?: number;
+  noMessageSevenDays?: number;
+  convertedCount?: number;
+  conversionRate?: number;
   mostMarked: [string, number][];
   recentResponses: Lead[];
   comments: Array<{ question_key: string; comment: string }>;
@@ -125,6 +128,15 @@ function AdminPesquisaContent() {
             Ver leads
           </Link>
 
+          <Link
+            className="btn-admin-secondary"
+            href={`/admin/pesquisa-diego/dashboard?token=${encodeURIComponent(
+              token,
+            )}`}
+          >
+            Dashboard semanal
+          </Link>
+
           <a
             className="btn-admin-primary"
             href={`/api/admin/export?token=${encodeURIComponent(token)}`}
@@ -178,13 +190,15 @@ function AdminPesquisaContent() {
 
       {summary ? (
         <div className="mt-8 space-y-6">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-8">
             <MetricCard label="Total de respostas" value={summary.total} />
             <MetricCard label="Leads alto interesse" value={summary.byInterest.alto ?? 0} />
             <MetricCard label="Leads médio interesse" value={summary.byInterest.medio ?? 0} />
             <MetricCard label="Leads baixo interesse" value={summary.byInterest.baixo ?? 0} />
             <MetricCard label="Prioridade alta" value={summary.byPriority?.alta ?? 0} />
             <MetricCard label="Contatos vencidos" value={summary.overdueCount ?? 0} />
+            <MetricCard label="Sem mensagem 7+ dias" value={summary.noMessageSevenDays ?? 0} />
+            <MetricCard label="Conversões" value={summary.convertedCount ?? 0} />
           </div>
 
           <div className="grid gap-6 lg:grid-cols-2">

@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Header } from "@/components/Header";
+import { buildFollowupSuggestion, isFollowupOverdue, isWithoutRecentMessage } from "@/lib/automation-rules";
+import { getConversionLabel } from "@/lib/funnel";
 import {
   buildLeadWhatsappMessage,
   getNextActionByStatus,
@@ -12,6 +13,7 @@ import {
   leadStatuses,
   statusFlow,
 } from "@/lib/journey-playbook";
+import { Header } from "@/components/Header";
 import type { LeadCrmFields, LeadSummary } from "@/lib/types";
 
 type Lead = LeadSummary;
@@ -22,6 +24,8 @@ type Summary = {
 
 type LeadPatch = LeadCrmFields & {
   lead_status?: string;
+  markMessageSentNow?: boolean;
+  generateFollowup?: boolean;
 };
 
 const priorityOptions = [
@@ -40,6 +44,13 @@ const deliveredOfferOptions = [
   "Relatório gratuito de evolução mensal",
   "Reavaliação gratuita de retorno",
   "Outro",
+];
+
+const automationFilters = [
+  { value: "todos", label: "Todos" },
+  { value: "vencidos", label: "Follow-up vencido" },
+  { value: "sem-mensagem", label: "Sem mensagem 7+ dias" },
+  { value: "quentes", label: "Prioridade alta" },
 ];
 
 function toDateTimeLocal(value?: string | null) {
@@ -63,11 +74,18 @@ function formatDateTime(value?: string | null) {
   });
 }
 
-function isOverdue(value?: string | null) {
-  if (!value) return false;
+function fromDateTimeLocal(value: string) {
+  if (!value) return null;
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return false;
-  return date.getTime() < Date.now();
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString();
+}
+
+function normalizeWhatsapp(value: string) {
+  const digits = value.replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.startsWith("55")) return digits;
+  return `55${digits}`;
 }
 
 function LeadsContent() {
@@ -76,12 +94,15 @@ function LeadsContent() {
 
   const [leads, setLeads] = useState<Lead[]>([]);
   const [messages, setMessages] = useState<Record<string, string>>({});
+  const [drafts, setDrafts] = useState<Record<string, LeadCrmFields>>({});
+  const [savingIds, setSavingIds] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showHelp, setShowHelp] = useState(false);
   const [statusFilter, setStatusFilter] = useState("todos");
   const [audienceFilter, setAudienceFilter] = useState("todos");
   const [priorityFilter, setPriorityFilter] = useState("todos");
+  const [automationFilter, setAutomationFilter] = useState("todos");
 
   useEffect(() => {
     let isMounted = true;
@@ -106,7 +127,29 @@ function LeadsContent() {
         }
 
         if (isMounted) {
-          setLeads((data as Summary).recentResponses ?? []);
+          const loadedLeads = (data as Summary).recentResponses ?? [];
+          setLeads(loadedLeads);
+          setDrafts(
+            Object.fromEntries(
+              loadedLeads.map((lead) => [
+                lead.id,
+                {
+                  priority: lead.priority ?? "media",
+                  next_contact_at: lead.next_contact_at ?? null,
+                  internal_notes: lead.internal_notes ?? "",
+                  delivered_offer: lead.delivered_offer ?? "",
+                  last_message_at: lead.last_message_at ?? null,
+                  converted_at: lead.converted_at ?? null,
+                  conversion_status: lead.conversion_status ?? null,
+                  program_suggested: lead.program_suggested ?? "",
+                  followup_count: lead.followup_count ?? 0,
+                  last_followup_suggestion: lead.last_followup_suggestion ?? "",
+                  weekly_report_bucket: lead.weekly_report_bucket ?? "",
+                  lost_reason: lead.lost_reason ?? "",
+                },
+              ]),
+            ),
+          );
         }
       } catch (err) {
         if (isMounted) {
@@ -135,91 +178,154 @@ function LeadsContent() {
       const matchesStatus = statusFilter === "todos" || lead.lead_status === statusFilter;
       const matchesAudience = audienceFilter === "todos" || lead.audience_slug === audienceFilter;
       const matchesPriority = priorityFilter === "todos" || (lead.priority ?? "media") === priorityFilter;
-      return matchesStatus && matchesAudience && matchesPriority;
+      const matchesAutomation =
+        automationFilter === "todos" ||
+        (automationFilter === "vencidos" && isFollowupOverdue(lead)) ||
+        (automationFilter === "sem-mensagem" && isWithoutRecentMessage(lead, 7)) ||
+        (automationFilter === "quentes" && (lead.priority ?? "media") === "alta");
+
+      return matchesStatus && matchesAudience && matchesPriority && matchesAutomation;
     });
-  }, [audienceFilter, leads, priorityFilter, statusFilter]);
+  }, [audienceFilter, automationFilter, leads, priorityFilter, statusFilter]);
 
-  async function updateLead(id: string, updates: LeadPatch) {
-    const response = await fetch(
-      `/api/admin/leads/status?token=${encodeURIComponent(token)}`,
-      {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id,
-          status: updates.lead_status,
-          priority: updates.priority,
-          internalNotes: updates.internal_notes,
-          deliveredOffer: updates.delivered_offer,
-          nextContactAt: updates.next_contact_at,
-          lastMessageAt: updates.last_message_at,
-        }),
-      },
-    );
-
-    const data = (await response.json().catch(() => ({}))) as {
-      error?: string;
-      lead?: Lead;
+  const metrics = useMemo(() => {
+    return {
+      total: leads.length,
+      overdue: leads.filter(isFollowupOverdue).length,
+      noMessage: leads.filter((lead) => isWithoutRecentMessage(lead, 7)).length,
+      highPriority: leads.filter((lead) => (lead.priority ?? "media") === "alta").length,
     };
+  }, [leads]);
 
-    if (!response.ok) {
-      throw new Error(data.error ?? "Não foi possível atualizar o lead.");
-    }
-
-    setLeads((current) =>
-      current.map((lead) =>
-        lead.id === id ? { ...lead, ...(data.lead ?? updates) } : lead,
-      ),
-    );
+  function updateDraft(id: string, patch: LeadCrmFields) {
+    setDrafts((current) => ({
+      ...current,
+      [id]: {
+        ...current[id],
+        ...patch,
+      },
+    }));
   }
 
-  async function copyMessage(lead: Lead) {
-    const text = buildLeadWhatsappMessage({
-      name: lead.name,
-      detectedProfile: lead.detected_profile,
-      audienceSlug: lead.audience_slug,
-      status: lead.lead_status,
-    });
+  async function patchLead(id: string, patch: LeadPatch) {
+    setSavingIds((current) => ({ ...current, [id]: true }));
 
-    setMessages((current) => ({ ...current, [lead.id]: text }));
+    try {
+      const response = await fetch(
+        `/api/admin/leads/status?token=${encodeURIComponent(token)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id,
+            status: patch.lead_status,
+            priority: patch.priority,
+            internalNotes: patch.internal_notes,
+            deliveredOffer: patch.delivered_offer,
+            nextContactAt: patch.next_contact_at,
+            lastMessageAt: patch.last_message_at,
+            convertedAt: patch.converted_at,
+            conversionStatus: patch.conversion_status,
+            programSuggested: patch.program_suggested,
+            followupCount: patch.followup_count,
+            lastFollowupSuggestion: patch.last_followup_suggestion,
+            weeklyReportBucket: patch.weekly_report_bucket,
+            lostReason: patch.lost_reason,
+            markMessageSentNow: patch.markMessageSentNow,
+            generateFollowup: patch.generateFollowup,
+          }),
+        },
+      );
+
+      const data = (await response.json()) as { lead?: Lead; error?: string };
+
+      if (!response.ok || !data.lead) {
+        throw new Error(data.error ?? "Não foi possível atualizar o lead.");
+      }
+
+      setLeads((current) =>
+        current.map((lead) => (lead.id === id ? data.lead as Lead : lead)),
+      );
+
+      const lead = data.lead;
+
+      setDrafts((current) => ({
+        ...current,
+        [id]: {
+          priority: lead.priority ?? "media",
+          next_contact_at: lead.next_contact_at ?? null,
+          internal_notes: lead.internal_notes ?? "",
+          delivered_offer: lead.delivered_offer ?? "",
+          last_message_at: lead.last_message_at ?? null,
+          converted_at: lead.converted_at ?? null,
+          conversion_status: lead.conversion_status ?? null,
+          program_suggested: lead.program_suggested ?? "",
+          followup_count: lead.followup_count ?? 0,
+          last_followup_suggestion: lead.last_followup_suggestion ?? "",
+          weekly_report_bucket: lead.weekly_report_bucket ?? "",
+          lost_reason: lead.lost_reason ?? "",
+        },
+      }));
+
+      if (patch.generateFollowup && lead.last_followup_suggestion) {
+        setMessages((current) => ({ ...current, [id]: lead.last_followup_suggestion ?? "" }));
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao salvar lead.");
+    } finally {
+      setSavingIds((current) => ({ ...current, [id]: false }));
+    }
+  }
+
+  async function copyText(id: string, text: string) {
+    setMessages((current) => ({ ...current, [id]: text }));
 
     if (typeof navigator !== "undefined" && navigator.clipboard) {
       await navigator.clipboard.writeText(text);
     }
-
-    await updateLead(lead.id, { last_message_at: new Date().toISOString() });
   }
 
-  function whatsappLink(lead: Lead) {
-    const text =
-      messages[lead.id] ??
-      buildLeadWhatsappMessage({
-        name: lead.name,
-        detectedProfile: lead.detected_profile,
-        audienceSlug: lead.audience_slug,
-        status: lead.lead_status,
-      });
+  async function copyInitialMessage(lead: Lead) {
+    const text = buildLeadWhatsappMessage({
+      name: lead.name,
+      audienceSlug: lead.audience_slug,
+      detectedProfile: lead.detected_profile,
+    });
 
-    const phone = lead.whatsapp.replace(/\D/g, "");
-    const phoneWithCountry = phone.startsWith("55") ? phone : `55${phone}`;
-
-    return `https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(text)}`;
+    await copyText(lead.id, text);
   }
 
-  const overdueCount = leads.filter((lead) => isOverdue(lead.next_contact_at)).length;
+  async function copySuggestedFollowup(lead: Lead) {
+    const savedText = lead.last_followup_suggestion || drafts[lead.id]?.last_followup_suggestion;
+    const text = savedText || buildFollowupSuggestion(lead).whatsappText;
+    await copyText(lead.id, text);
+  }
+
+  async function generateFollowup(lead: Lead) {
+    await patchLead(lead.id, { generateFollowup: true });
+  }
+
+  async function markMessageSent(lead: Lead) {
+    const count = (lead.followup_count ?? 0) + 1;
+    await patchLead(lead.id, {
+      lead_status: lead.lead_status === "Novo" ? "Mensagem enviada" : lead.lead_status,
+      markMessageSentNow: true,
+      last_message_at: new Date().toISOString(),
+      followup_count: count,
+    });
+  }
 
   return (
     <section className="mx-auto max-w-6xl px-4 py-6 sm:px-5 sm:py-8">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <p className="label-pill">CRM da Jornada</p>
           <h1 className="mt-3 text-3xl font-black text-slate-950 sm:text-4xl">
-            Leads e mensagens para WhatsApp
+            Leads, follow-ups e mensagens para WhatsApp
           </h1>
           <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600 sm:text-base">
-            Conduza cada pessoa pela Jornada Personal Extrema: dor entendida,
-            oferta gratuita certa, próximo contato registrado e proposta sem cair
-            no mar vermelho do treino genérico.
+            Acompanhe cada lead como uma jornada: diagnóstico, mensagem, oferta
+            gratuita, follow-up, conversa, piloto e conversão.
           </p>
         </div>
 
@@ -231,106 +337,64 @@ function LeadsContent() {
           >
             Como abordar leads?
           </button>
+
           <Link
             className="btn-admin-secondary"
             href={`/admin/pesquisa-diego?token=${encodeURIComponent(token)}`}
           >
-            Voltar ao painel
+            Painel
+          </Link>
+
+          <Link
+            className="btn-admin-primary"
+            href={`/admin/pesquisa-diego/dashboard?token=${encodeURIComponent(token)}`}
+          >
+            Dashboard semanal
           </Link>
         </div>
       </div>
 
       {showHelp ? <LeadsHelpModal onClose={() => setShowHelp(false)} /> : null}
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-[1fr_0.85fr]">
-        <div className="card p-5">
-          <p className="label-pill">Fluxograma</p>
-          <h2 className="mt-3 text-2xl font-black">Funil consultivo recomendado</h2>
-          <div className="journey-flow mt-4">
-            {statusFlow.map((status, index) => (
-              <div key={status} className="journey-step">
-                <span className="journey-step-number">{index + 1}</span>
-                <span>{status}</span>
-              </div>
-            ))}
-          </div>
-          <p className="mt-4 text-sm leading-6 text-slate-600">
-            A venda aparece como consequência do diagnóstico. Primeiro vem
-            acolhimento, oferta gratuita, registro de follow-up e entendimento da rotina.
-          </p>
-        </div>
-
-        <div className="card p-5">
-          <p className="label-pill">Prioridade</p>
-          <h2 className="mt-3 text-2xl font-black">O que olhar primeiro</h2>
-          <ul className="mt-4 space-y-2 text-sm leading-6 text-slate-700">
-            <li><strong>1.</strong> Próximos contatos vencidos: {overdueCount}.</li>
-            <li><strong>2.</strong> Leads com prioridade alta.</li>
-            <li><strong>3.</strong> Leads com interesse alto e comentário aberto.</li>
-            <li><strong>4.</strong> Pessoas que receberam oferta, mas não avançaram.</li>
-          </ul>
-        </div>
+      <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard label="Leads" value={metrics.total} />
+        <MetricCard label="Follow-ups vencidos" value={metrics.overdue} highlight />
+        <MetricCard label="Sem mensagem 7+ dias" value={metrics.noMessage} />
+        <MetricCard label="Prioridade alta" value={metrics.highPriority} />
       </div>
 
-      <div className="card mt-6 grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-5">
-        <label className="text-sm font-bold">
-          Filtrar status
-          <select
-            className="select mt-2"
-            value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value)}
-          >
-            <option value="todos">Todos</option>
-            {leadStatuses.map((status) => (
-              <option key={status} value={status}>
-                {status}
-              </option>
-            ))}
-          </select>
-        </label>
+      <div className="mt-6 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="grid gap-3 md:grid-cols-4">
+          <label className="block text-sm font-bold">
+            Status
+            <select className="select mt-2" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+              <option value="todos">Todos</option>
+              {leadStatuses.map((status) => <option key={status}>{status}</option>)}
+            </select>
+          </label>
 
-        <label className="text-sm font-bold">
-          Filtrar público
-          <select
-            className="select mt-2"
-            value={audienceFilter}
-            onChange={(event) => setAudienceFilter(event.target.value)}
-          >
-            <option value="todos">Todos</option>
-            {audiences.map((audience) => (
-              <option key={audience} value={audience}>
-                {audience}
-              </option>
-            ))}
-          </select>
-        </label>
+          <label className="block text-sm font-bold">
+            Público
+            <select className="select mt-2" value={audienceFilter} onChange={(event) => setAudienceFilter(event.target.value)}>
+              <option value="todos">Todos</option>
+              {audiences.map((audience) => <option key={audience}>{audience}</option>)}
+            </select>
+          </label>
 
-        <label className="text-sm font-bold">
-          Filtrar prioridade
-          <select
-            className="select mt-2"
-            value={priorityFilter}
-            onChange={(event) => setPriorityFilter(event.target.value)}
-          >
-            <option value="todos">Todas</option>
-            {priorityOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
+          <label className="block text-sm font-bold">
+            Prioridade
+            <select className="select mt-2" value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)}>
+              <option value="todos">Todas</option>
+              {priorityOptions.map((priority) => <option key={priority.value} value={priority.value}>{priority.label}</option>)}
+            </select>
+          </label>
 
-        <div className="rounded-2xl bg-slate-100 p-4">
-          <p className="text-sm font-bold text-slate-500">Total exibido</p>
-          <p className="mt-1 text-3xl font-black">{filteredLeads.length}</p>
-        </div>
-
-        <div className="rounded-2xl bg-emerald-50 p-4 text-emerald-950">
-          <p className="text-sm font-bold">Lembrete</p>
-          <p className="mt-1 text-sm leading-5">
-            Use próximo contato para não perder o timing da jornada.
-          </p>
+          <label className="block text-sm font-bold">
+            Automação assistida
+            <select className="select mt-2" value={automationFilter} onChange={(event) => setAutomationFilter(event.target.value)}>
+              {automationFilters.map((filter) => <option key={filter.value} value={filter.value}>{filter.label}</option>)}
+            </select>
+          </label>
         </div>
       </div>
 
@@ -340,23 +404,27 @@ function LeadsContent() {
         </p>
       ) : null}
 
-      {isLoading ? (
-        <p className="mt-8 text-slate-600">Carregando leads...</p>
-      ) : null}
+      {isLoading ? <p className="mt-8 text-slate-600">Carregando leads...</p> : null}
 
       {!isLoading && filteredLeads.length === 0 ? (
-        <p className="mt-8 text-slate-600">Nenhum lead encontrado com os filtros atuais.</p>
+        <p className="mt-8 text-slate-600">Nenhum lead encontrado para os filtros selecionados.</p>
       ) : null}
 
-      <div className="mt-8 grid gap-4">
+      <div className="mt-8 grid gap-5">
         {filteredLeads.map((lead) => (
           <LeadCard
             key={lead.id}
             lead={lead}
+            draft={drafts[lead.id] ?? {}}
             message={messages[lead.id]}
-            onCopy={() => copyMessage(lead)}
-            onSave={(updates) => updateLead(lead.id, updates)}
-            whatsappHref={whatsappLink(lead)}
+            isSaving={Boolean(savingIds[lead.id])}
+            onDraftChange={(patch) => updateDraft(lead.id, patch)}
+            onSaveCrm={() => patchLead(lead.id, drafts[lead.id] ?? {})}
+            onStatusChange={(status) => patchLead(lead.id, { lead_status: status })}
+            onCopyInitial={() => copyInitialMessage(lead)}
+            onGenerateFollowup={() => generateFollowup(lead)}
+            onCopyFollowup={() => copySuggestedFollowup(lead)}
+            onMarkMessageSent={() => markMessageSent(lead)}
           />
         ))}
       </div>
@@ -364,295 +432,239 @@ function LeadsContent() {
   );
 }
 
+function MetricCard({ label, value, highlight }: { label: string; value: number; highlight?: boolean }) {
+  return (
+    <div className={`card p-5 ${highlight ? "border-amber-300 bg-amber-50" : ""}`}>
+      <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">{label}</p>
+      <p className="mt-2 text-3xl font-black">{value}</p>
+    </div>
+  );
+}
+
 function LeadCard({
   lead,
+  draft,
   message,
-  onCopy,
-  onSave,
-  whatsappHref,
+  isSaving,
+  onDraftChange,
+  onSaveCrm,
+  onStatusChange,
+  onCopyInitial,
+  onGenerateFollowup,
+  onCopyFollowup,
+  onMarkMessageSent,
 }: {
   lead: Lead;
+  draft: LeadCrmFields;
   message?: string;
-  onCopy: () => Promise<void>;
-  onSave: (updates: LeadPatch) => Promise<void>;
-  whatsappHref: string;
+  isSaving: boolean;
+  onDraftChange: (patch: LeadCrmFields) => void;
+  onSaveCrm: () => void;
+  onStatusChange: (status: string) => void;
+  onCopyInitial: () => void;
+  onGenerateFollowup: () => void;
+  onCopyFollowup: () => void;
+  onMarkMessageSent: () => void;
 }) {
   const playbook = getPlaybookByAudience(lead.audience_slug);
-  const currentIndex = getStatusIndex(lead.lead_status);
   const nextAction = getNextActionByStatus(lead.lead_status, lead.audience_slug);
-  const createdAt = new Date(lead.created_at).toLocaleDateString("pt-BR");
-  const [status, setStatus] = useState(lead.lead_status);
-  const [priority, setPriority] = useState(lead.priority ?? "media");
-  const [nextContactAt, setNextContactAt] = useState(toDateTimeLocal(lead.next_contact_at));
-  const [deliveredOffer, setDeliveredOffer] = useState(lead.delivered_offer ?? "");
-  const [lastMessageAt, setLastMessageAt] = useState(toDateTimeLocal(lead.last_message_at));
-  const [internalNotes, setInternalNotes] = useState(lead.internal_notes ?? "");
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveMessage, setSaveMessage] = useState<string | null>(null);
-  const overdue = isOverdue(lead.next_contact_at);
-
-  useEffect(() => {
-    setStatus(lead.lead_status);
-    setPriority(lead.priority ?? "media");
-    setNextContactAt(toDateTimeLocal(lead.next_contact_at));
-    setDeliveredOffer(lead.delivered_offer ?? "");
-    setLastMessageAt(toDateTimeLocal(lead.last_message_at));
-    setInternalNotes(lead.internal_notes ?? "");
-  }, [lead]);
-
-  async function saveCrm() {
-    try {
-      setIsSaving(true);
-      setSaveMessage(null);
-      await onSave({
-        lead_status: status,
-        priority,
-        next_contact_at: nextContactAt,
-        delivered_offer: deliveredOffer,
-        last_message_at: lastMessageAt,
-        internal_notes: internalNotes,
-      });
-      setSaveMessage("Acompanhamento salvo.");
-    } catch (err) {
-      setSaveMessage(err instanceof Error ? err.message : "Erro ao salvar acompanhamento.");
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  async function handleCopy() {
-    await onCopy();
-    setLastMessageAt(toDateTimeLocal(new Date().toISOString()));
-    setSaveMessage("Mensagem copiada e data da última mensagem registrada.");
-  }
+  const suggestion = buildFollowupSuggestion(lead);
+  const whatsapp = normalizeWhatsapp(lead.whatsapp);
+  const statusIndex = getStatusIndex(lead.lead_status);
 
   return (
-    <article className="card overflow-hidden p-4 sm:p-5">
-      <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
+    <div className="card p-5">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <div className="flex flex-wrap gap-2">
-                <p className="label-pill">{playbook.label}</p>
-                <p className={`label-pill ${priority === "alta" ? "bg-red-100 text-red-800" : ""}`}>
-                  Prioridade {priority}
-                </p>
-                {overdue ? <p className="label-pill bg-amber-100 text-amber-900">Contato vencido</p> : null}
-              </div>
-              <h2 className="mt-3 text-2xl font-black">{lead.name}</h2>
-              <p className="mt-1 text-sm text-slate-600">
-                {lead.whatsapp} • recebido em {createdAt}
-              </p>
-              <p className="mt-3 text-sm">
-                <strong>Perfil detectado:</strong> {lead.detected_profile}
-              </p>
-              <p className="text-sm">
-                <strong>Interesse:</strong> {lead.interest_level} •{" "}
-                <strong>Status:</strong> {lead.lead_status}
-              </p>
-              <p className="mt-2 text-sm text-slate-600">
-                <strong>Última mensagem:</strong> {formatDateTime(lead.last_message_at)} •{" "}
-                <strong>Próximo contato:</strong> {formatDateTime(lead.next_contact_at)}
-              </p>
-            </div>
-
-            <div className="grid gap-2 sm:min-w-56">
-              <button className="btn-admin-secondary" type="button" onClick={handleCopy}>
-                Copiar mensagem
-              </button>
-              <a className="btn-admin-primary text-center" href={whatsappHref} target="_blank" rel="noreferrer">
-                Abrir WhatsApp
-              </a>
-            </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="label-pill">{lead.audience_slug}</span>
+            <span className="label-pill">Prioridade {(lead.priority ?? "media").toString()}</span>
+            {isFollowupOverdue(lead) ? <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-black text-red-700">Follow-up vencido</span> : null}
+            {isWithoutRecentMessage(lead, 7) ? <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-black text-amber-700">Sem mensagem 7+ dias</span> : null}
           </div>
 
-          <div className="journey-flow mt-5">
-            {statusFlow.map((flowStatus, index) => (
-              <div
-                key={flowStatus}
-                className={`journey-step ${
-                  index <= currentIndex ? "journey-step-active" : ""
-                }`}
-              >
-                <span className="journey-step-number">{index + 1}</span>
-                <span>{flowStatus}</span>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-5 rounded-2xl bg-emerald-50 p-4 text-emerald-950">
-            <p className="text-sm font-black">Próxima ação recomendada</p>
-            <p className="mt-2 text-sm leading-6">{nextAction}</p>
-          </div>
-
-          {message ? (
-            <textarea
-              className="textarea mt-4 min-h-36"
-              readOnly
-              value={message}
-            />
-          ) : null}
+          <h2 className="mt-3 text-2xl font-black">{lead.name}</h2>
+          <p className="mt-1 text-sm text-slate-600">
+            {lead.whatsapp} • {lead.detected_profile}
+          </p>
+          <p className="mt-2 text-sm">
+            <strong>Status:</strong> {lead.lead_status} •{" "}
+            <strong>Conversão:</strong> {getConversionLabel(lead.conversion_status)} •{" "}
+            <strong>Interesse:</strong> {lead.interest_level}
+          </p>
+          <p className="mt-2 text-sm">
+            <strong>Última mensagem:</strong> {formatDateTime(lead.last_message_at)} •{" "}
+            <strong>Próximo contato:</strong> {formatDateTime(lead.next_contact_at)}
+          </p>
         </div>
 
-        <aside className="rounded-[24px] bg-slate-100 p-4">
-          <h3 className="text-lg font-black">Acompanhamento CRM</h3>
-
-          <div className="mt-4 grid gap-3">
-            <label className="text-sm font-bold">
-              Status
-              <select
-                className="select mt-2"
-                value={status}
-                onChange={(event) => setStatus(event.target.value)}
-              >
-                {leadStatuses.map((item) => (
-                  <option key={item}>{item}</option>
-                ))}
-              </select>
-            </label>
-
-            <label className="text-sm font-bold">
-              Prioridade
-              <select
-                className="select mt-2"
-                value={priority}
-                onChange={(event) => setPriority(event.target.value)}
-              >
-                {priorityOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="text-sm font-bold">
-              Próximo contato
-              <input
-                className="input mt-2"
-                type="datetime-local"
-                value={nextContactAt}
-                onChange={(event) => setNextContactAt(event.target.value)}
-              />
-            </label>
-
-            <label className="text-sm font-bold">
-              Data da última mensagem
-              <input
-                className="input mt-2"
-                type="datetime-local"
-                value={lastMessageAt}
-                onChange={(event) => setLastMessageAt(event.target.value)}
-              />
-            </label>
-
-            <label className="text-sm font-bold">
-              Oferta entregue
-              <select
-                className="select mt-2"
-                value={deliveredOffer}
-                onChange={(event) => setDeliveredOffer(event.target.value)}
-              >
-                {deliveredOfferOptions.map((offer) => (
-                  <option key={offer} value={offer}>
-                    {offer || "Nenhuma"}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="text-sm font-bold">
-              Observações internas
-              <textarea
-                className="textarea mt-2 min-h-28"
-                value={internalNotes}
-                onChange={(event) => setInternalNotes(event.target.value)}
-                placeholder="Ex.: respondeu que só consegue treinar à noite; quer começar em casa; chamar novamente em 15 dias."
-              />
-            </label>
-
-            <button className="btn-admin-primary" type="button" onClick={saveCrm} disabled={isSaving}>
-              {isSaving ? "Salvando..." : "Salvar acompanhamento"}
-            </button>
-
-            {saveMessage ? (
-              <p className="rounded-2xl bg-white p-3 text-sm font-semibold text-slate-700">
-                {saveMessage}
-              </p>
-            ) : null}
-          </div>
-
-          <div className="mt-5 border-t border-slate-200 pt-4">
-            <h3 className="text-lg font-black">Playbook deste lead</h3>
-
-            <div className="mt-4 space-y-3 text-sm leading-6 text-slate-700">
-              <p><strong>Posicionamento:</strong> {playbook.positioning}</p>
-              <p><strong>Oferta gratuita:</strong> {playbook.freeOffer}</p>
-              <p><strong>Programa natural:</strong> {playbook.nextProgram}</p>
-              <p><strong>Cuidado:</strong> {playbook.caution}</p>
-            </div>
-
-            <details className="mt-4 rounded-2xl bg-white p-3">
-              <summary className="cursor-pointer font-black">Perguntas Deep Dive</summary>
-              <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-700">
-                {playbook.discoveryQuestions.map((question) => (
-                  <li key={question}>• {question}</li>
-                ))}
-              </ul>
-            </details>
-          </div>
-        </aside>
+        <div className="grid gap-2 sm:grid-cols-2 xl:min-w-[360px]">
+          <button className="btn-admin-secondary" type="button" onClick={onCopyInitial}>
+            Copiar mensagem inicial
+          </button>
+          <button className="btn-admin-secondary" type="button" onClick={onGenerateFollowup}>
+            Gerar follow-up
+          </button>
+          <button className="btn-admin-secondary" type="button" onClick={onCopyFollowup}>
+            Copiar follow-up
+          </button>
+          <button className="btn-admin-secondary" type="button" onClick={onMarkMessageSent}>
+            Marcar mensagem hoje
+          </button>
+          {whatsapp ? (
+            <a
+              className="btn-admin-primary sm:col-span-2"
+              href={`https://wa.me/${whatsapp}?text=${encodeURIComponent(message || lead.last_followup_suggestion || buildLeadWhatsappMessage({ name: lead.name, audienceSlug: lead.audience_slug, detectedProfile: lead.detected_profile }))}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Abrir WhatsApp
+            </a>
+          ) : null}
+        </div>
       </div>
-    </article>
+
+      <div className="mt-5">
+        <p className="text-sm font-black text-slate-600">Fluxo da jornada</p>
+        <div className="journey-flow mt-3">
+          {statusFlow.map((status, index) => (
+            <span
+              key={status}
+              className={`journey-step ${index <= statusIndex ? "journey-step-active" : ""}`}
+            >
+              <span className="journey-step-number">{index + 1}</span>
+              {status}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+        <div className="rounded-2xl bg-slate-100 p-4">
+          <h3 className="font-black">Próxima ação recomendada</h3>
+          <p className="mt-2 text-sm leading-6 text-slate-700">{nextAction}</p>
+          <p className="mt-3 text-sm leading-6 text-slate-700">
+            <strong>Follow-up sugerido:</strong> {suggestion.title}. {suggestion.action}
+          </p>
+          <p className="mt-3 text-sm leading-6 text-slate-700">
+            <strong>Programa natural:</strong> {draft.program_suggested || playbook.nextProgram}
+          </p>
+        </div>
+
+        <div className="rounded-2xl bg-emerald-50 p-4">
+          <h3 className="font-black text-emerald-950">Playbook Oceano Azul</h3>
+          <p className="mt-2 text-sm leading-6 text-emerald-900">
+            {playbook.oceanBlueAngle}
+          </p>
+          <p className="mt-3 text-sm leading-6 text-emerald-900">
+            <strong>Oferta gratuita:</strong> {playbook.freeOffer}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-4 lg:grid-cols-3">
+        <label className="block text-sm font-bold">
+          Status
+          <select className="select mt-2" value={lead.lead_status} onChange={(event) => onStatusChange(event.target.value)}>
+            {leadStatuses.map((status) => <option key={status}>{status}</option>)}
+          </select>
+        </label>
+
+        <label className="block text-sm font-bold">
+          Prioridade
+          <select className="select mt-2" value={(draft.priority ?? "media") as string} onChange={(event) => onDraftChange({ priority: event.target.value })}>
+            {priorityOptions.map((priority) => <option key={priority.value} value={priority.value}>{priority.label}</option>)}
+          </select>
+        </label>
+
+        <label className="block text-sm font-bold">
+          Oferta entregue
+          <select className="select mt-2" value={draft.delivered_offer ?? ""} onChange={(event) => onDraftChange({ delivered_offer: event.target.value })}>
+            {deliveredOfferOptions.map((offer) => <option key={offer} value={offer}>{offer || "Nenhuma"}</option>)}
+          </select>
+        </label>
+
+        <label className="block text-sm font-bold">
+          Próximo contato
+          <input className="input mt-2" type="datetime-local" value={toDateTimeLocal(draft.next_contact_at)} onChange={(event) => onDraftChange({ next_contact_at: fromDateTimeLocal(event.target.value) })} />
+        </label>
+
+        <label className="block text-sm font-bold">
+          Última mensagem
+          <input className="input mt-2" type="datetime-local" value={toDateTimeLocal(draft.last_message_at)} onChange={(event) => onDraftChange({ last_message_at: fromDateTimeLocal(event.target.value) })} />
+        </label>
+
+        <label className="block text-sm font-bold">
+          Programa sugerido
+          <input className="input mt-2" value={draft.program_suggested ?? ""} onChange={(event) => onDraftChange({ program_suggested: event.target.value })} placeholder={playbook.nextProgram} />
+        </label>
+
+        <label className="block text-sm font-bold">
+          Data da conversão
+          <input className="input mt-2" type="datetime-local" value={toDateTimeLocal(draft.converted_at)} onChange={(event) => onDraftChange({ converted_at: fromDateTimeLocal(event.target.value) })} />
+        </label>
+
+        <label className="block text-sm font-bold">
+          Motivo de perda
+          <input className="input mt-2" value={draft.lost_reason ?? ""} onChange={(event) => onDraftChange({ lost_reason: event.target.value })} placeholder="Ex.: sem orçamento, sem tempo, sem resposta" />
+        </label>
+
+        <label className="block text-sm font-bold">
+          Bucket semanal
+          <input className="input mt-2" value={draft.weekly_report_bucket ?? ""} onChange={(event) => onDraftChange({ weekly_report_bucket: event.target.value })} placeholder="Ex.: Follow-up vencido" />
+        </label>
+      </div>
+
+      <label className="mt-4 block text-sm font-bold">
+        Observações internas
+        <textarea
+          className="textarea mt-2 min-h-24"
+          value={draft.internal_notes ?? ""}
+          onChange={(event) => onDraftChange({ internal_notes: event.target.value })}
+          placeholder="Registre dores, objeções, disponibilidade, resposta ao WhatsApp e contexto humano."
+        />
+      </label>
+
+      <button className="btn-admin-primary mt-4" type="button" onClick={onSaveCrm} disabled={isSaving}>
+        {isSaving ? "Salvando..." : "Salvar acompanhamento"}
+      </button>
+
+      {message ? (
+        <textarea className="textarea mt-4 min-h-32" readOnly value={message} />
+      ) : null}
+    </div>
   );
 }
 
 function LeadsHelpModal({ onClose }: { onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-end bg-slate-950/70 p-3 backdrop-blur sm:items-center sm:justify-center">
-      <div className="max-h-[88vh] w-full max-w-3xl overflow-y-auto rounded-[28px] bg-white p-5 text-slate-950 shadow-2xl sm:p-7">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/70 p-4">
+      <div className="mx-auto my-8 max-w-3xl rounded-3xl bg-white p-5 shadow-2xl sm:p-8">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="label-pill">Ajuda da Jornada</p>
-            <h2 className="mt-3 text-2xl font-black">
-              Como conduzir cada lead
-            </h2>
+            <p className="label-pill">Automação assistida</p>
+            <h2 className="mt-3 text-3xl font-black">Como abordar leads sem cair no mar vermelho</h2>
           </div>
-          <button className="btn-admin-secondary" type="button" onClick={onClose}>
-            Fechar
-          </button>
+          <button className="btn-admin-secondary" type="button" onClick={onClose}>Fechar</button>
         </div>
 
-        <div className="mt-5 space-y-4 text-sm leading-6 text-slate-700">
+        <div className="mt-6 grid gap-4">
           <div className="rounded-2xl bg-slate-100 p-4">
-            <h3 className="font-black">1. Não comece pelo preço</h3>
-            <p className="mt-2">
-              Comece mostrando que entendeu a dor da pessoa. Depois ofereça
-              o material gratuito e só então convide para diagnóstico.
+            <h3 className="font-black">1. Priorize quem está vencido ou quente</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              Comece por follow-ups vencidos, prioridade alta e leads sem mensagem há mais de 7 dias.
             </p>
           </div>
-
           <div className="rounded-2xl bg-slate-100 p-4">
-            <h3 className="font-black">2. Registre o próximo contato</h3>
-            <p className="mt-2">
-              Use o campo “Próximo contato” para transformar intenção em rotina.
-              Isso evita leads esquecidos e mantém a jornada viva.
+            <h3 className="font-black">2. Use follow-up como continuação da dor</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              A mensagem não deve vender treino. Deve retomar a dor, entregar valor gratuito e chamar para diagnóstico.
             </p>
           </div>
-
           <div className="rounded-2xl bg-slate-100 p-4">
-            <h3 className="font-black">3. Use prioridade e oferta entregue</h3>
-            <p className="mt-2">
-              Prioridade ajuda o Diego a focar nos leads com mais urgência. Oferta entregue
-              mostra se a pessoa já recebeu valor antes da proposta paga.
-            </p>
-          </div>
-
-          <div className="rounded-2xl bg-slate-100 p-4">
-            <h3 className="font-black">4. Anote contexto humano</h3>
-            <p className="mt-2">
-              Observações como rotina, dores, medo, preferência de horário e objeções
-              ajudam a próxima conversa ser personalizada e não genérica.
+            <h3 className="font-black">3. Atualize o funil sempre</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              Cada contato precisa atualizar status, última mensagem e próximo contato para alimentar o dashboard semanal.
             </p>
           </div>
         </div>

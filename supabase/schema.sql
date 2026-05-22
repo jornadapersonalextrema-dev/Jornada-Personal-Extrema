@@ -18,6 +18,13 @@ create table if not exists public.survey_responses (
   internal_notes text,
   delivered_offer text,
   last_message_at timestamptz,
+  converted_at timestamptz,
+  conversion_status text default 'lead',
+  program_suggested text,
+  followup_count integer default 0,
+  last_followup_suggestion text,
+  weekly_report_bucket text,
+  lost_reason text,
   created_at timestamptz not null default now()
 );
 
@@ -55,10 +62,34 @@ alter table public.survey_responses add column if not exists next_contact_at tim
 alter table public.survey_responses add column if not exists internal_notes text;
 alter table public.survey_responses add column if not exists delivered_offer text;
 alter table public.survey_responses add column if not exists last_message_at timestamptz;
+alter table public.survey_responses add column if not exists converted_at timestamptz;
+alter table public.survey_responses add column if not exists conversion_status text default 'lead';
+alter table public.survey_responses add column if not exists program_suggested text;
+alter table public.survey_responses add column if not exists followup_count integer default 0;
+alter table public.survey_responses add column if not exists last_followup_suggestion text;
+alter table public.survey_responses add column if not exists weekly_report_bucket text;
+alter table public.survey_responses add column if not exists lost_reason text;
 
 update public.survey_responses
 set priority = 'media'
 where priority is null;
+
+update public.survey_responses
+set conversion_status = case
+  when lead_status = 'Mensagem enviada' then 'contacted'
+  when lead_status = 'Diagnóstico agendado' then 'diagnostic_scheduled'
+  when lead_status = 'Piloto oferecido' then 'pilot_offered'
+  when lead_status = 'Virou aluno' then 'converted'
+  when lead_status = 'Sem interesse agora' then 'lost'
+  when lead_status = 'Parceiro potencial' then 'partner'
+  when lead_status = 'Arquivado' then 'archived'
+  else 'lead'
+end
+where conversion_status is null;
+
+update public.survey_responses
+set followup_count = 0
+where followup_count is null;
 
 alter table public.survey_responses enable row level security;
 alter table public.survey_answers enable row level security;
