@@ -84,7 +84,7 @@ function AdminPesquisaContent() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="label-pill">Admin</p>
-          <h1 className="mt-3 text-4xl font-black text-stone-950">
+          <h1 className="mt-3 text-4xl font-black text-slate-950">
             Acompanhamento da pesquisa
           </h1>
         </div>
@@ -120,14 +120,14 @@ function AdminPesquisaContent() {
         <div className="mt-8 space-y-6">
           <div className="grid gap-4 md:grid-cols-4">
             <div className="card p-5">
-              <p className="text-sm font-bold text-stone-500">
+              <p className="text-sm font-bold text-slate-500">
                 Total de respostas
               </p>
               <p className="mt-2 text-4xl font-black">{summary.total}</p>
             </div>
 
             <div className="card p-5">
-              <p className="text-sm font-bold text-stone-500">
+              <p className="text-sm font-bold text-slate-500">
                 Leads alto interesse
               </p>
               <p className="mt-2 text-4xl font-black">
@@ -136,7 +136,7 @@ function AdminPesquisaContent() {
             </div>
 
             <div className="card p-5">
-              <p className="text-sm font-bold text-stone-500">
+              <p className="text-sm font-bold text-slate-500">
                 Leads médio interesse
               </p>
               <p className="mt-2 text-4xl font-black">
@@ -145,7 +145,7 @@ function AdminPesquisaContent() {
             </div>
 
             <div className="card p-5">
-              <p className="text-sm font-bold text-stone-500">
+              <p className="text-sm font-bold text-slate-500">
                 Leads baixo interesse
               </p>
               <p className="mt-2 text-4xl font-black">
@@ -162,7 +162,7 @@ function AdminPesquisaContent() {
                 {Object.entries(summary.byAudience).map(([key, value]) => (
                   <div
                     key={key}
-                    className="flex justify-between rounded-2xl bg-stone-100 p-3"
+                    className="flex justify-between rounded-2xl bg-slate-100 p-3"
                   >
                     <span>{key}</span>
                     <strong>{value}</strong>
@@ -170,7 +170,7 @@ function AdminPesquisaContent() {
                 ))}
 
                 {Object.keys(summary.byAudience).length === 0 ? (
-                  <p className="text-stone-600">Nenhuma resposta ainda.</p>
+                  <p className="text-slate-600">Nenhuma resposta ainda.</p>
                 ) : null}
               </div>
             </div>
@@ -182,7 +182,7 @@ function AdminPesquisaContent() {
                 {summary.mostMarked.map(([key, value]) => (
                   <div
                     key={key}
-                    className="flex justify-between rounded-2xl bg-stone-100 p-3"
+                    className="flex justify-between rounded-2xl bg-slate-100 p-3"
                   >
                     <span>{key}</span>
                     <strong>{value}</strong>
@@ -190,7 +190,7 @@ function AdminPesquisaContent() {
                 ))}
 
                 {summary.mostMarked.length === 0 ? (
-                  <p className="text-stone-600">Nenhuma marcação ainda.</p>
+                  <p className="text-slate-600">Nenhuma marcação ainda.</p>
                 ) : null}
               </div>
             </div>
@@ -198,7 +198,7 @@ function AdminPesquisaContent() {
 
           <div className="card p-5">
             <h2 className="text-2xl font-black">Resumo para reunião</h2>
-            <p className="mt-3 rounded-2xl bg-stone-100 p-4 leading-7 text-stone-700">
+            <p className="mt-3 rounded-2xl bg-slate-100 p-4 leading-7 text-slate-700">
               {summary.meetingSummary}
             </p>
           </div>
@@ -208,12 +208,12 @@ function AdminPesquisaContent() {
 
             <div className="mt-4 space-y-2">
               {summary.comments.length === 0 ? (
-                <p className="text-stone-600">Nenhum comentário ainda.</p>
+                <p className="text-slate-600">Nenhum comentário ainda.</p>
               ) : (
                 summary.comments.map((comment, index) => (
                   <p
                     key={`${comment.question_key}-${index}`}
-                    className="rounded-2xl bg-stone-100 p-3 text-sm"
+                    className="rounded-2xl bg-slate-100 p-3 text-sm"
                   >
                     <strong>{comment.question_key}:</strong> {comment.comment}
                   </p>
@@ -231,7 +231,7 @@ function AdminPesquisaFallback() {
   return (
     <section className="mx-auto max-w-6xl px-5 py-8">
       <p className="label-pill">Admin</p>
-      <h1 className="mt-3 text-4xl font-black text-stone-950">
+      <h1 className="mt-3 text-4xl font-black text-slate-950">
         Acompanhamento da pesquisa
       </h1>
       <p className="mt-6">Carregando...</p>
@@ -241,7 +241,7 @@ function AdminPesquisaFallback() {
 
 export default function AdminPesquisaPage() {
   return (
-    <main>
+    <main className="admin-shell">
       <Header />
       <Suspense fallback={<AdminPesquisaFallback />}>
         <AdminPesquisaContent />

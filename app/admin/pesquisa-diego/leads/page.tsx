@@ -76,7 +76,7 @@ function LeadsContent() {
 
     const text = `Oi, ${
       lead?.name?.split(" ")[0] ?? "tudo bem"
-    }. Vi suas respostas no diagnóstico da Jornada Personal Extrema e percebi que seu perfil está relacionado a: ${
+    }. Aqui é o Diego Montagnini. Vi suas respostas no diagnóstico da Jornada Personal Extrema e percebi que seu perfil está relacionado a: ${
       lead?.detected_profile ?? "sua rotina e seus objetivos"
     }. Posso te enviar uma devolutiva inicial gratuita e um próximo passo simples para sua rotina?`;
 
@@ -110,7 +110,7 @@ function LeadsContent() {
     <section className="mx-auto max-w-6xl px-5 py-8">
       <p className="label-pill">CRM simples</p>
 
-      <h1 className="mt-3 text-4xl font-black text-stone-950">
+      <h1 className="mt-3 text-4xl font-black text-slate-950">
         Leads e mensagens para WhatsApp
       </h1>
 
@@ -121,11 +121,11 @@ function LeadsContent() {
       ) : null}
 
       {isLoading ? (
-        <p className="mt-8 text-stone-600">Carregando leads...</p>
+        <p className="mt-8 text-slate-600">Carregando leads...</p>
       ) : null}
 
       {!isLoading && leads.length === 0 ? (
-        <p className="mt-8 text-stone-600">Nenhum lead encontrado ainda.</p>
+        <p className="mt-8 text-slate-600">Nenhum lead encontrado ainda.</p>
       ) : null}
 
       <div className="mt-8 grid gap-4">
@@ -135,7 +135,7 @@ function LeadsContent() {
               <div>
                 <h2 className="text-xl font-black">{lead.name}</h2>
 
-                <p className="text-sm text-stone-600">
+                <p className="text-sm text-slate-600">
                   {lead.whatsapp} • {lead.audience_slug}
                 </p>
 
@@ -193,17 +193,17 @@ function LeadsFallback() {
   return (
     <section className="mx-auto max-w-6xl px-5 py-8">
       <p className="label-pill">CRM simples</p>
-      <h1 className="mt-3 text-4xl font-black text-stone-950">
+      <h1 className="mt-3 text-4xl font-black text-slate-950">
         Leads e mensagens para WhatsApp
       </h1>
-      <p className="mt-8 text-stone-600">Carregando leads...</p>
+      <p className="mt-8 text-slate-600">Carregando leads...</p>
     </section>
   );
 }
 
 export default function LeadsPage() {
   return (
-    <main>
+    <main className="admin-shell">
       <Header />
       <Suspense fallback={<LeadsFallback />}>
         <LeadsContent />

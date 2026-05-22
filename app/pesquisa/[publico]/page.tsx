@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { FormEvent, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Header } from "@/components/Header";
@@ -34,8 +35,8 @@ export default function PesquisaPublicoPage() {
       <main>
         <Header />
         <div className="mx-auto max-w-3xl px-5 py-12">
-          <h1 className="text-2xl font-black">Público não encontrado.</h1>
-          <p className="mt-3 text-stone-700">
+          <h1 className="text-2xl font-black text-white">Público não encontrado.</h1>
+          <p className="mt-3 text-slate-200">
             Volte para a página da pesquisa e escolha um dos públicos disponíveis.
           </p>
         </div>
@@ -104,19 +105,41 @@ export default function PesquisaPublicoPage() {
       <Header />
 
       <section className="mx-auto max-w-4xl px-5 py-8">
-        <p className="label-pill">{audience.name}</p>
+        <div className="card overflow-hidden p-5 md:p-6">
+          <div className="grid gap-5 md:grid-cols-[1fr_170px] md:items-center">
+            <div>
+              <p className="label-pill-gold">{audience.name}</p>
 
-        <h1 className="mt-4 text-4xl font-black text-stone-950">
-          Diagnóstico Corpo, Energia e Rotina
-        </h1>
+              <h1 className="brand-gradient-text mt-4 text-4xl font-black">
+                Diagnóstico Corpo, Energia e Rotina
+              </h1>
 
-        <p className="mt-3 text-stone-700">
-          Oferta gratuita indicada para este público:{" "}
-          <strong>{audience.freeOffer}</strong>
-        </p>
+              <p className="mt-3 leading-7 text-slate-200">
+                Responda com calma. O objetivo do <strong>Diego Montagnini</strong> é
+                entender sua rotina, suas dores e o que você realmente deseja
+                transformar antes de sugerir qualquer caminho.
+              </p>
+
+              <p className="mt-4 rounded-2xl border border-emerald-300/20 bg-emerald-300/10 p-4 text-sm font-bold text-emerald-100">
+                Oferta gratuita indicada para este público: {audience.freeOffer}
+              </p>
+            </div>
+
+            <div className="relative min-h-48 overflow-hidden rounded-[24px] border border-white/10 bg-slate-950">
+              <Image
+                src="/diego-montagnini.jpg"
+                alt="Diego Montagnini"
+                fill
+                sizes="170px"
+                className="object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-slate-950/70 to-transparent" />
+            </div>
+          </div>
+        </div>
 
         <form onSubmit={onSubmit} className="mt-8 space-y-5">
-          <div className="card grid gap-4 p-5 md:grid-cols-2">
+          <div className="brand-card-light grid gap-4 p-5 md:grid-cols-2">
             <label className="block text-sm font-bold">
               Nome *
               <input
@@ -183,7 +206,7 @@ export default function PesquisaPublicoPage() {
           </div>
 
           {questions.map((question, index) => (
-            <div key={question.key} className="card p-5">
+            <div key={question.key} className="brand-card-light p-5">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="label-pill">Pergunta {index + 1}</span>
                 <span className="label-pill">
