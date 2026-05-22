@@ -21,6 +21,8 @@ type Summary = {
   total: number;
   byAudience: Record<string, number>;
   byInterest: Record<string, number>;
+  byPriority?: Record<string, number>;
+  overdueCount?: number;
   mostMarked: [string, number][];
   recentResponses: Lead[];
   comments: Array<{ question_key: string; comment: string }>;
@@ -176,11 +178,13 @@ function AdminPesquisaContent() {
 
       {summary ? (
         <div className="mt-8 space-y-6">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
             <MetricCard label="Total de respostas" value={summary.total} />
             <MetricCard label="Leads alto interesse" value={summary.byInterest.alto ?? 0} />
             <MetricCard label="Leads médio interesse" value={summary.byInterest.medio ?? 0} />
             <MetricCard label="Leads baixo interesse" value={summary.byInterest.baixo ?? 0} />
+            <MetricCard label="Prioridade alta" value={summary.byPriority?.alta ?? 0} />
+            <MetricCard label="Contatos vencidos" value={summary.overdueCount ?? 0} />
           </div>
 
           <div className="grid gap-6 lg:grid-cols-2">

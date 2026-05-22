@@ -12,21 +12,63 @@ import {
   leadStatuses,
   statusFlow,
 } from "@/lib/journey-playbook";
+import type { LeadCrmFields, LeadSummary } from "@/lib/types";
 
-type Lead = {
-  id: string;
-  name: string;
-  whatsapp: string;
-  audience_slug: string;
-  detected_profile: string;
-  interest_level: string;
-  lead_status: string;
-  created_at: string;
-};
+type Lead = LeadSummary;
 
 type Summary = {
   recentResponses: Lead[];
 };
+
+type LeadPatch = LeadCrmFields & {
+  lead_status?: string;
+};
+
+const priorityOptions = [
+  { value: "alta", label: "Alta" },
+  { value: "media", label: "Média" },
+  { value: "baixa", label: "Baixa" },
+];
+
+const deliveredOfferOptions = [
+  "",
+  "Checklist Corredor Forte",
+  "Miniavaliação Força e Autonomia 45+",
+  "Plano com 3 treinos de 20 minutos",
+  "Áudio/PDF de respiração e presença antes do treino",
+  "Diagnóstico gratuito de retenção e acompanhamento de alunos",
+  "Relatório gratuito de evolução mensal",
+  "Reavaliação gratuita de retorno",
+  "Outro",
+];
+
+function toDateTimeLocal(value?: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return "Não informado";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Não informado";
+  return date.toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function isOverdue(value?: string | null) {
+  if (!value) return false;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  return date.getTime() < Date.now();
+}
 
 function LeadsContent() {
   const params = useSearchParams();
@@ -39,6 +81,7 @@ function LeadsContent() {
   const [showHelp, setShowHelp] = useState(false);
   const [statusFilter, setStatusFilter] = useState("todos");
   const [audienceFilter, setAudienceFilter] = useState("todos");
+  const [priorityFilter, setPriorityFilter] = useState("todos");
 
   useEffect(() => {
     let isMounted = true;
@@ -91,9 +134,44 @@ function LeadsContent() {
     return leads.filter((lead) => {
       const matchesStatus = statusFilter === "todos" || lead.lead_status === statusFilter;
       const matchesAudience = audienceFilter === "todos" || lead.audience_slug === audienceFilter;
-      return matchesStatus && matchesAudience;
+      const matchesPriority = priorityFilter === "todos" || (lead.priority ?? "media") === priorityFilter;
+      return matchesStatus && matchesAudience && matchesPriority;
     });
-  }, [audienceFilter, leads, statusFilter]);
+  }, [audienceFilter, leads, priorityFilter, statusFilter]);
+
+  async function updateLead(id: string, updates: LeadPatch) {
+    const response = await fetch(
+      `/api/admin/leads/status?token=${encodeURIComponent(token)}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id,
+          status: updates.lead_status,
+          priority: updates.priority,
+          internalNotes: updates.internal_notes,
+          deliveredOffer: updates.delivered_offer,
+          nextContactAt: updates.next_contact_at,
+          lastMessageAt: updates.last_message_at,
+        }),
+      },
+    );
+
+    const data = (await response.json().catch(() => ({}))) as {
+      error?: string;
+      lead?: Lead;
+    };
+
+    if (!response.ok) {
+      throw new Error(data.error ?? "Não foi possível atualizar o lead.");
+    }
+
+    setLeads((current) =>
+      current.map((lead) =>
+        lead.id === id ? { ...lead, ...(data.lead ?? updates) } : lead,
+      ),
+    );
+  }
 
   async function copyMessage(lead: Lead) {
     const text = buildLeadWhatsappMessage({
@@ -108,6 +186,8 @@ function LeadsContent() {
     if (typeof navigator !== "undefined" && navigator.clipboard) {
       await navigator.clipboard.writeText(text);
     }
+
+    await updateLead(lead.id, { last_message_at: new Date().toISOString() });
   }
 
   function whatsappLink(lead: Lead) {
@@ -126,24 +206,7 @@ function LeadsContent() {
     return `https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(text)}`;
   }
 
-  async function updateStatus(id: string, status: string) {
-    const response = await fetch(
-      `/api/admin/leads/status?token=${encodeURIComponent(token)}`,
-      {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, status }),
-      },
-    );
-
-    if (response.ok) {
-      setLeads((current) =>
-        current.map((lead) =>
-          lead.id === id ? { ...lead, lead_status: status } : lead,
-        ),
-      );
-    }
-  }
+  const overdueCount = leads.filter((lead) => isOverdue(lead.next_contact_at)).length;
 
   return (
     <section className="mx-auto max-w-6xl px-4 py-6 sm:px-5 sm:py-8">
@@ -155,7 +218,7 @@ function LeadsContent() {
           </h1>
           <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600 sm:text-base">
             Conduza cada pessoa pela Jornada Personal Extrema: dor entendida,
-            oferta gratuita certa, conversa de diagnóstico e proposta sem cair
+            oferta gratuita certa, próximo contato registrado e proposta sem cair
             no mar vermelho do treino genérico.
           </p>
         </div>
@@ -193,7 +256,7 @@ function LeadsContent() {
           </div>
           <p className="mt-4 text-sm leading-6 text-slate-600">
             A venda aparece como consequência do diagnóstico. Primeiro vem
-            acolhimento, oferta gratuita e entendimento da rotina.
+            acolhimento, oferta gratuita, registro de follow-up e entendimento da rotina.
           </p>
         </div>
 
@@ -201,15 +264,15 @@ function LeadsContent() {
           <p className="label-pill">Prioridade</p>
           <h2 className="mt-3 text-2xl font-black">O que olhar primeiro</h2>
           <ul className="mt-4 space-y-2 text-sm leading-6 text-slate-700">
-            <li><strong>1.</strong> Leads com interesse alto.</li>
-            <li><strong>2.</strong> Comentários com dor, medo ou urgência.</li>
-            <li><strong>3.</strong> Pessoas que aceitaram diagnóstico/piloto.</li>
-            <li><strong>4.</strong> Parceiros com possibilidade de B2B.</li>
+            <li><strong>1.</strong> Próximos contatos vencidos: {overdueCount}.</li>
+            <li><strong>2.</strong> Leads com prioridade alta.</li>
+            <li><strong>3.</strong> Leads com interesse alto e comentário aberto.</li>
+            <li><strong>4.</strong> Pessoas que receberam oferta, mas não avançaram.</li>
           </ul>
         </div>
       </div>
 
-      <div className="card mt-6 grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="card mt-6 grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-5">
         <label className="text-sm font-bold">
           Filtrar status
           <select
@@ -242,6 +305,22 @@ function LeadsContent() {
           </select>
         </label>
 
+        <label className="text-sm font-bold">
+          Filtrar prioridade
+          <select
+            className="select mt-2"
+            value={priorityFilter}
+            onChange={(event) => setPriorityFilter(event.target.value)}
+          >
+            <option value="todos">Todas</option>
+            {priorityOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
         <div className="rounded-2xl bg-slate-100 p-4">
           <p className="text-sm font-bold text-slate-500">Total exibido</p>
           <p className="mt-1 text-3xl font-black">{filteredLeads.length}</p>
@@ -250,7 +329,7 @@ function LeadsContent() {
         <div className="rounded-2xl bg-emerald-50 p-4 text-emerald-950">
           <p className="text-sm font-bold">Lembrete</p>
           <p className="mt-1 text-sm leading-5">
-            Novo lead deve receber mensagem em até 24h.
+            Use próximo contato para não perder o timing da jornada.
           </p>
         </div>
       </div>
@@ -276,7 +355,7 @@ function LeadsContent() {
             lead={lead}
             message={messages[lead.id]}
             onCopy={() => copyMessage(lead)}
-            onStatusChange={(status) => updateStatus(lead.id, status)}
+            onSave={(updates) => updateLead(lead.id, updates)}
             whatsappHref={whatsappLink(lead)}
           />
         ))}
@@ -289,27 +368,77 @@ function LeadCard({
   lead,
   message,
   onCopy,
-  onStatusChange,
+  onSave,
   whatsappHref,
 }: {
   lead: Lead;
   message?: string;
-  onCopy: () => void;
-  onStatusChange: (status: string) => void;
+  onCopy: () => Promise<void>;
+  onSave: (updates: LeadPatch) => Promise<void>;
   whatsappHref: string;
 }) {
   const playbook = getPlaybookByAudience(lead.audience_slug);
   const currentIndex = getStatusIndex(lead.lead_status);
   const nextAction = getNextActionByStatus(lead.lead_status, lead.audience_slug);
   const createdAt = new Date(lead.created_at).toLocaleDateString("pt-BR");
+  const [status, setStatus] = useState(lead.lead_status);
+  const [priority, setPriority] = useState(lead.priority ?? "media");
+  const [nextContactAt, setNextContactAt] = useState(toDateTimeLocal(lead.next_contact_at));
+  const [deliveredOffer, setDeliveredOffer] = useState(lead.delivered_offer ?? "");
+  const [lastMessageAt, setLastMessageAt] = useState(toDateTimeLocal(lead.last_message_at));
+  const [internalNotes, setInternalNotes] = useState(lead.internal_notes ?? "");
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const overdue = isOverdue(lead.next_contact_at);
+
+  useEffect(() => {
+    setStatus(lead.lead_status);
+    setPriority(lead.priority ?? "media");
+    setNextContactAt(toDateTimeLocal(lead.next_contact_at));
+    setDeliveredOffer(lead.delivered_offer ?? "");
+    setLastMessageAt(toDateTimeLocal(lead.last_message_at));
+    setInternalNotes(lead.internal_notes ?? "");
+  }, [lead]);
+
+  async function saveCrm() {
+    try {
+      setIsSaving(true);
+      setSaveMessage(null);
+      await onSave({
+        lead_status: status,
+        priority,
+        next_contact_at: nextContactAt,
+        delivered_offer: deliveredOffer,
+        last_message_at: lastMessageAt,
+        internal_notes: internalNotes,
+      });
+      setSaveMessage("Acompanhamento salvo.");
+    } catch (err) {
+      setSaveMessage(err instanceof Error ? err.message : "Erro ao salvar acompanhamento.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleCopy() {
+    await onCopy();
+    setLastMessageAt(toDateTimeLocal(new Date().toISOString()));
+    setSaveMessage("Mensagem copiada e data da última mensagem registrada.");
+  }
 
   return (
     <article className="card overflow-hidden p-4 sm:p-5">
-      <div className="grid gap-4 lg:grid-cols-[1fr_330px]">
+      <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
         <div>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <p className="label-pill">{playbook.label}</p>
+              <div className="flex flex-wrap gap-2">
+                <p className="label-pill">{playbook.label}</p>
+                <p className={`label-pill ${priority === "alta" ? "bg-red-100 text-red-800" : ""}`}>
+                  Prioridade {priority}
+                </p>
+                {overdue ? <p className="label-pill bg-amber-100 text-amber-900">Contato vencido</p> : null}
+              </div>
               <h2 className="mt-3 text-2xl font-black">{lead.name}</h2>
               <p className="mt-1 text-sm text-slate-600">
                 {lead.whatsapp} • recebido em {createdAt}
@@ -321,10 +450,14 @@ function LeadCard({
                 <strong>Interesse:</strong> {lead.interest_level} •{" "}
                 <strong>Status:</strong> {lead.lead_status}
               </p>
+              <p className="mt-2 text-sm text-slate-600">
+                <strong>Última mensagem:</strong> {formatDateTime(lead.last_message_at)} •{" "}
+                <strong>Próximo contato:</strong> {formatDateTime(lead.next_contact_at)}
+              </p>
             </div>
 
             <div className="grid gap-2 sm:min-w-56">
-              <button className="btn-admin-secondary" type="button" onClick={onCopy}>
+              <button className="btn-admin-secondary" type="button" onClick={handleCopy}>
                 Copiar mensagem
               </button>
               <a className="btn-admin-primary text-center" href={whatsappHref} target="_blank" rel="noreferrer">
@@ -334,15 +467,15 @@ function LeadCard({
           </div>
 
           <div className="journey-flow mt-5">
-            {statusFlow.map((status, index) => (
+            {statusFlow.map((flowStatus, index) => (
               <div
-                key={status}
+                key={flowStatus}
                 className={`journey-step ${
                   index <= currentIndex ? "journey-step-active" : ""
                 }`}
               >
                 <span className="journey-step-number">{index + 1}</span>
-                <span>{status}</span>
+                <span>{flowStatus}</span>
               </div>
             ))}
           </div>
@@ -362,36 +495,112 @@ function LeadCard({
         </div>
 
         <aside className="rounded-[24px] bg-slate-100 p-4">
-          <h3 className="text-lg font-black">Playbook deste lead</h3>
+          <h3 className="text-lg font-black">Acompanhamento CRM</h3>
 
-          <div className="mt-4 space-y-3 text-sm leading-6 text-slate-700">
-            <p><strong>Posicionamento:</strong> {playbook.positioning}</p>
-            <p><strong>Oferta gratuita:</strong> {playbook.freeOffer}</p>
-            <p><strong>Programa natural:</strong> {playbook.nextProgram}</p>
-            <p><strong>Cuidado:</strong> {playbook.caution}</p>
+          <div className="mt-4 grid gap-3">
+            <label className="text-sm font-bold">
+              Status
+              <select
+                className="select mt-2"
+                value={status}
+                onChange={(event) => setStatus(event.target.value)}
+              >
+                {leadStatuses.map((item) => (
+                  <option key={item}>{item}</option>
+                ))}
+              </select>
+            </label>
+
+            <label className="text-sm font-bold">
+              Prioridade
+              <select
+                className="select mt-2"
+                value={priority}
+                onChange={(event) => setPriority(event.target.value)}
+              >
+                {priorityOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="text-sm font-bold">
+              Próximo contato
+              <input
+                className="input mt-2"
+                type="datetime-local"
+                value={nextContactAt}
+                onChange={(event) => setNextContactAt(event.target.value)}
+              />
+            </label>
+
+            <label className="text-sm font-bold">
+              Data da última mensagem
+              <input
+                className="input mt-2"
+                type="datetime-local"
+                value={lastMessageAt}
+                onChange={(event) => setLastMessageAt(event.target.value)}
+              />
+            </label>
+
+            <label className="text-sm font-bold">
+              Oferta entregue
+              <select
+                className="select mt-2"
+                value={deliveredOffer}
+                onChange={(event) => setDeliveredOffer(event.target.value)}
+              >
+                {deliveredOfferOptions.map((offer) => (
+                  <option key={offer} value={offer}>
+                    {offer || "Nenhuma"}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="text-sm font-bold">
+              Observações internas
+              <textarea
+                className="textarea mt-2 min-h-28"
+                value={internalNotes}
+                onChange={(event) => setInternalNotes(event.target.value)}
+                placeholder="Ex.: respondeu que só consegue treinar à noite; quer começar em casa; chamar novamente em 15 dias."
+              />
+            </label>
+
+            <button className="btn-admin-primary" type="button" onClick={saveCrm} disabled={isSaving}>
+              {isSaving ? "Salvando..." : "Salvar acompanhamento"}
+            </button>
+
+            {saveMessage ? (
+              <p className="rounded-2xl bg-white p-3 text-sm font-semibold text-slate-700">
+                {saveMessage}
+              </p>
+            ) : null}
           </div>
 
-          <details className="mt-4 rounded-2xl bg-white p-3">
-            <summary className="cursor-pointer font-black">Perguntas Deep Dive</summary>
-            <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-700">
-              {playbook.discoveryQuestions.map((question) => (
-                <li key={question}>• {question}</li>
-              ))}
-            </ul>
-          </details>
+          <div className="mt-5 border-t border-slate-200 pt-4">
+            <h3 className="text-lg font-black">Playbook deste lead</h3>
 
-          <label className="mt-4 block text-sm font-bold">
-            Atualizar status
-            <select
-              className="select mt-2"
-              value={lead.lead_status}
-              onChange={(event) => onStatusChange(event.target.value)}
-            >
-              {leadStatuses.map((status) => (
-                <option key={status}>{status}</option>
-              ))}
-            </select>
-          </label>
+            <div className="mt-4 space-y-3 text-sm leading-6 text-slate-700">
+              <p><strong>Posicionamento:</strong> {playbook.positioning}</p>
+              <p><strong>Oferta gratuita:</strong> {playbook.freeOffer}</p>
+              <p><strong>Programa natural:</strong> {playbook.nextProgram}</p>
+              <p><strong>Cuidado:</strong> {playbook.caution}</p>
+            </div>
+
+            <details className="mt-4 rounded-2xl bg-white p-3">
+              <summary className="cursor-pointer font-black">Perguntas Deep Dive</summary>
+              <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-700">
+                {playbook.discoveryQuestions.map((question) => (
+                  <li key={question}>• {question}</li>
+                ))}
+              </ul>
+            </details>
+          </div>
         </aside>
       </div>
     </article>
@@ -424,26 +633,26 @@ function LeadsHelpModal({ onClose }: { onClose: () => void }) {
           </div>
 
           <div className="rounded-2xl bg-slate-100 p-4">
-            <h3 className="font-black">2. Use o botão “Copiar mensagem”</h3>
+            <h3 className="font-black">2. Registre o próximo contato</h3>
             <p className="mt-2">
-              A mensagem já segue uma lógica de Deep Dive: reconhece o perfil,
-              posiciona o Diego Montagnini e oferece um próximo passo leve.
+              Use o campo “Próximo contato” para transformar intenção em rotina.
+              Isso evita leads esquecidos e mantém a jornada viva.
             </p>
           </div>
 
           <div className="rounded-2xl bg-slate-100 p-4">
-            <h3 className="font-black">3. Abra o WhatsApp pelo celular</h3>
+            <h3 className="font-black">3. Use prioridade e oferta entregue</h3>
             <p className="mt-2">
-              A tela foi organizada em cards para facilitar o uso mobile:
-              copiar mensagem, abrir WhatsApp e mudar status no mesmo bloco.
+              Prioridade ajuda o Diego a focar nos leads com mais urgência. Oferta entregue
+              mostra se a pessoa já recebeu valor antes da proposta paga.
             </p>
           </div>
 
           <div className="rounded-2xl bg-slate-100 p-4">
-            <h3 className="font-black">4. Atualize status sempre</h3>
+            <h3 className="font-black">4. Anote contexto humano</h3>
             <p className="mt-2">
-              O status é o histórico comercial da Jornada Personal Extrema.
-              Sem status atualizado, o Diego perde visão do funil.
+              Observações como rotina, dores, medo, preferência de horário e objeções
+              ajudam a próxima conversa ser personalizada e não genérica.
             </p>
           </div>
         </div>

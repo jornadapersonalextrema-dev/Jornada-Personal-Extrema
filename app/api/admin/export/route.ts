@@ -8,6 +8,7 @@ function csvEscape(value: unknown) {
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
+
   if (!isValidAdminToken(url.searchParams.get("token"))) {
     return NextResponse.json({ error: "Token inválido." }, { status: 401 });
   }
@@ -20,10 +21,50 @@ export async function GET(request: Request) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const headers = ["created_at", "name", "whatsapp", "email", "audience_slug", "detected_profile", "interest_level", "urgency_score", "lead_status", "free_offer", "whatsapp_text"];
+  const headers = [
+    "created_at",
+    "name",
+    "whatsapp",
+    "email",
+    "audience_slug",
+    "detected_profile",
+    "interest_level",
+    "urgency_score",
+    "lead_status",
+    "priority",
+    "next_contact_at",
+    "delivered_offer",
+    "last_message_at",
+    "internal_notes",
+    "free_offer",
+    "whatsapp_text",
+  ];
+
   const rows = (data ?? []).map((row) => {
-    const message = Array.isArray(row.survey_generated_messages) ? row.survey_generated_messages[0] : null;
-    return [row.created_at, row.name, row.whatsapp, row.email, row.audience_slug, row.detected_profile, row.interest_level, row.urgency_score, row.lead_status, message?.free_offer_suggestion, message?.whatsapp_text].map(csvEscape).join(",");
+    const message = Array.isArray(row.survey_generated_messages)
+      ? row.survey_generated_messages[0]
+      : null;
+
+    return [
+      row.created_at,
+      row.name,
+      row.whatsapp,
+      row.email,
+      row.audience_slug,
+      row.detected_profile,
+      row.interest_level,
+      row.urgency_score,
+      row.lead_status,
+      row.priority,
+      row.next_contact_at,
+      row.delivered_offer,
+      row.last_message_at,
+      row.internal_notes,
+      message?.free_offer_suggestion,
+      message?.whatsapp_text,
+    ]
+      .map(csvEscape)
+      .join(",");
   });
 
   return new Response([headers.join(","), ...rows].join("\n"), {

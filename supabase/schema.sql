@@ -13,6 +13,11 @@ create table if not exists public.survey_responses (
   interest_level text,
   urgency_score integer default 0,
   lead_status text default 'Novo',
+  priority text default 'media',
+  next_contact_at timestamptz,
+  internal_notes text,
+  delivered_offer text,
+  last_message_at timestamptz,
   created_at timestamptz not null default now()
 );
 
@@ -44,6 +49,16 @@ create table if not exists public.lead_notes (
   note text not null,
   created_at timestamptz not null default now()
 );
+
+alter table public.survey_responses add column if not exists priority text default 'media';
+alter table public.survey_responses add column if not exists next_contact_at timestamptz;
+alter table public.survey_responses add column if not exists internal_notes text;
+alter table public.survey_responses add column if not exists delivered_offer text;
+alter table public.survey_responses add column if not exists last_message_at timestamptz;
+
+update public.survey_responses
+set priority = 'media'
+where priority is null;
 
 alter table public.survey_responses enable row level security;
 alter table public.survey_answers enable row level security;
