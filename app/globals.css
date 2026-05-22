@@ -171,3 +171,110 @@ a {
   color: #166534;
   border-color: rgba(37, 211, 102, 0.24);
 }
+
+
+.btn-admin-primary {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #16a34a, #047857);
+  color: #ffffff;
+  padding: 0.75rem 1rem;
+  font-size: 0.92rem;
+  font-weight: 900;
+  box-shadow: 0 14px 28px rgba(22, 163, 74, 0.18);
+}
+
+.btn-admin-primary:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.03);
+}
+
+.btn-admin-secondary {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  background: #ffffff;
+  color: #0f172a;
+  padding: 0.75rem 1rem;
+  font-size: 0.92rem;
+  font-weight: 900;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.06);
+}
+
+.btn-admin-secondary:hover {
+  background: #f8fafc;
+  transform: translateY(-1px);
+}
+
+.journey-flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.journey-step {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  gap: 0.45rem;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: #ffffff;
+  color: #334155;
+  padding: 0.45rem 0.7rem;
+  font-size: 0.78rem;
+  font-weight: 900;
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.06);
+}
+
+.journey-step-active {
+  border-color: rgba(22, 163, 74, 0.35);
+  background: #dcfce7;
+  color: #14532d;
+}
+
+.journey-step-number {
+  display: inline-flex;
+  height: 1.45rem;
+  width: 1.45rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #0f172a;
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 900;
+}
+
+.journey-step-active .journey-step-number {
+  background: #16a34a;
+}
+
+@media (max-width: 640px) {
+  .card {
+    border-radius: 20px;
+  }
+
+  .btn-primary,
+  .btn-secondary,
+  .btn-admin-primary,
+  .btn-admin-secondary {
+    width: 100%;
+  }
+
+  .journey-flow {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .journey-step {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
