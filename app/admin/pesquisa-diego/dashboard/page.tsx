@@ -4,6 +4,8 @@ import Link from "next/link";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Header } from "@/components/Header";
+import { AdminAuthGuard } from "@/components/AdminAuthGuard";
+import { adminFetch, buildAdminApiUrl } from "@/lib/client-admin";
 import { buildFollowupSuggestion, isFollowupOverdue, isWithoutRecentMessage } from "@/lib/automation-rules";
 import { conversionStages } from "@/lib/funnel";
 import type { DashboardSummary, LeadSummary } from "@/lib/types";
@@ -35,9 +37,7 @@ function DashboardContent() {
         setIsLoading(true);
         setError(null);
 
-        const response = await fetch(
-          `/api/admin/dashboard?token=${encodeURIComponent(token)}`,
-        );
+        const response = await adminFetch("/api/admin/dashboard", token);
 
         const data = (await response.json()) as DashboardSummary | { error?: string };
 
@@ -94,13 +94,19 @@ function DashboardContent() {
         <div className="grid gap-2 sm:flex sm:flex-wrap">
           <Link
             className="btn-admin-secondary"
-            href={`/admin/pesquisa-diego?token=${encodeURIComponent(token)}`}
+            href={buildAdminApiUrl("/admin/pesquisa-diego", token)}
           >
             Painel
           </Link>
           <Link
+            className="btn-admin-secondary"
+            href={buildAdminApiUrl("/admin/pesquisa-diego/agenda", token)}
+          >
+            Agenda
+          </Link>
+          <Link
             className="btn-admin-primary"
-            href={`/admin/pesquisa-diego/leads?token=${encodeURIComponent(token)}`}
+            href={buildAdminApiUrl("/admin/pesquisa-diego/leads", token)}
           >
             Ver leads
           </Link>
@@ -267,7 +273,7 @@ function LeadList({
                 </div>
                 <Link
                   className="btn-admin-secondary"
-                  href={`/admin/pesquisa-diego/leads?token=${encodeURIComponent(token)}`}
+                  href={buildAdminApiUrl("/admin/pesquisa-diego/leads", token)}
                 >
                   Abrir CRM
                 </Link>
@@ -297,7 +303,9 @@ export default function DashboardPage() {
     <main className="admin-shell">
       <Header />
       <Suspense fallback={<DashboardFallback />}>
-        <DashboardContent />
+        <AdminAuthGuard>
+          <DashboardContent />
+        </AdminAuthGuard>
       </Suspense>
     </main>
   );

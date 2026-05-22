@@ -7,7 +7,7 @@ export default function HomePage() {
     <main>
       <Header />
 
-      <section className="mx-auto grid max-w-6xl gap-10 px-5 py-10 md:grid-cols-[1.08fr_0.92fr] md:items-center">
+      <section className="mx-auto grid max-w-6xl gap-10 px-5 pb-10 pt-4 md:grid-cols-[1.08fr_0.92fr] md:items-start">
         <div>
           <p className="label-pill-gold mb-5">
             Pesquisa + Diagnóstico + Consultoria gratuita
@@ -28,7 +28,7 @@ export default function HomePage() {
               Responder diagnóstico
             </Link>
             <Link className="btn-secondary" href="/admin/pesquisa-diego">
-              Painel admin
+              Gestão
             </Link>
           </div>
 
@@ -45,7 +45,7 @@ export default function HomePage() {
           </div>
         </div>
 
-        <div className="card overflow-hidden p-5">
+        <div className="card overflow-hidden p-4 md:mt-2 md:p-5">
           <div className="relative min-h-[420px] overflow-hidden rounded-[24px] border border-white/10 bg-slate-950">
             <Image
               src="/diego-montagnini.jpg"

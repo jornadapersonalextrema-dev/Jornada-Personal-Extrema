@@ -14,6 +14,8 @@ import {
   statusFlow,
 } from "@/lib/journey-playbook";
 import { Header } from "@/components/Header";
+import { AdminAuthGuard } from "@/components/AdminAuthGuard";
+import { adminFetch, buildAdminApiUrl } from "@/lib/client-admin";
 import type { LeadCrmFields, LeadSummary } from "@/lib/types";
 
 type Lead = LeadSummary;
@@ -112,9 +114,7 @@ function LeadsContent() {
         setIsLoading(true);
         setError(null);
 
-        const response = await fetch(
-          `/api/admin/summary?token=${encodeURIComponent(token)}`,
-        );
+        const response = await adminFetch("/api/admin/summary", token);
 
         const data = (await response.json()) as Summary | { error?: string };
 
@@ -146,6 +146,9 @@ function LeadsContent() {
                   last_followup_suggestion: lead.last_followup_suggestion ?? "",
                   weekly_report_bucket: lead.weekly_report_bucket ?? "",
                   lost_reason: lead.lost_reason ?? "",
+                  narrated_context: lead.narrated_context ?? "",
+                  known_history_summary: lead.known_history_summary ?? "",
+                  next_journey_step: lead.next_journey_step ?? "",
                 },
               ]),
             ),
@@ -211,8 +214,9 @@ function LeadsContent() {
     setSavingIds((current) => ({ ...current, [id]: true }));
 
     try {
-      const response = await fetch(
-        `/api/admin/leads/status?token=${encodeURIComponent(token)}`,
+      const response = await adminFetch(
+        "/api/admin/leads/status",
+        token,
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -231,6 +235,9 @@ function LeadsContent() {
             lastFollowupSuggestion: patch.last_followup_suggestion,
             weeklyReportBucket: patch.weekly_report_bucket,
             lostReason: patch.lost_reason,
+            narratedContext: patch.narrated_context,
+            knownHistorySummary: patch.known_history_summary,
+            nextJourneyStep: patch.next_journey_step,
             markMessageSentNow: patch.markMessageSentNow,
             generateFollowup: patch.generateFollowup,
           }),
@@ -264,6 +271,9 @@ function LeadsContent() {
           last_followup_suggestion: lead.last_followup_suggestion ?? "",
           weekly_report_bucket: lead.weekly_report_bucket ?? "",
           lost_reason: lead.lost_reason ?? "",
+          narrated_context: lead.narrated_context ?? "",
+          known_history_summary: lead.known_history_summary ?? "",
+          next_journey_step: lead.next_journey_step ?? "",
         },
       }));
 
@@ -314,6 +324,10 @@ function LeadsContent() {
       followup_count: count,
     });
   }
+  async function copyAudioPrompt(lead: Lead) {
+    const prompt = buildAudioPrompt(lead);
+    await copyText(lead.id, prompt);
+  }
 
   return (
     <section className="mx-auto max-w-6xl px-4 py-6 sm:px-5 sm:py-8">
@@ -340,14 +354,14 @@ function LeadsContent() {
 
           <Link
             className="btn-admin-secondary"
-            href={`/admin/pesquisa-diego?token=${encodeURIComponent(token)}`}
+            href={buildAdminApiUrl("/admin/pesquisa-diego", token)}
           >
             Painel
           </Link>
 
           <Link
             className="btn-admin-primary"
-            href={`/admin/pesquisa-diego/dashboard?token=${encodeURIComponent(token)}`}
+            href={buildAdminApiUrl("/admin/pesquisa-diego/dashboard", token)}
           >
             Dashboard semanal
           </Link>
@@ -425,6 +439,7 @@ function LeadsContent() {
             onGenerateFollowup={() => generateFollowup(lead)}
             onCopyFollowup={() => copySuggestedFollowup(lead)}
             onMarkMessageSent={() => markMessageSent(lead)}
+            onCopyAudioPrompt={() => copyAudioPrompt(lead)}
           />
         ))}
       </div>
@@ -453,6 +468,7 @@ function LeadCard({
   onGenerateFollowup,
   onCopyFollowup,
   onMarkMessageSent,
+  onCopyAudioPrompt,
 }: {
   lead: Lead;
   draft: LeadCrmFields;
@@ -465,6 +481,7 @@ function LeadCard({
   onGenerateFollowup: () => void;
   onCopyFollowup: () => void;
   onMarkMessageSent: () => void;
+  onCopyAudioPrompt: () => void;
 }) {
   const playbook = getPlaybookByAudience(lead.audience_slug);
   const nextAction = getNextActionByStatus(lead.lead_status, lead.audience_slug);
@@ -510,6 +527,9 @@ function LeadCard({
           </button>
           <button className="btn-admin-secondary" type="button" onClick={onMarkMessageSent}>
             Marcar mensagem hoje
+          </button>
+          <button className="btn-admin-secondary" type="button" onClick={onCopyAudioPrompt}>
+            Prompt para áudio
           </button>
           {whatsapp ? (
             <a
@@ -625,6 +645,52 @@ function LeadCard({
         />
       </label>
 
+      <div className="mt-4 rounded-3xl border border-emerald-200 bg-emerald-50 p-4">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h3 className="text-lg font-black text-emerald-950">Memória narrada do Diego</h3>
+            <p className="mt-1 text-sm leading-6 text-emerald-900">
+              Use este bloco para registrar o que Diego já sabe sobre alunos atuais. A proposta é não perguntar tudo de novo: o histórico conhecido deve orientar a próxima etapa da Jornada.
+            </p>
+          </div>
+          <button className="btn-admin-secondary" type="button" onClick={onCopyAudioPrompt}>
+            Copiar prompt
+          </button>
+        </div>
+
+        <div className="mt-4 grid gap-4 lg:grid-cols-3">
+          <label className="block text-sm font-bold text-emerald-950 lg:col-span-3">
+            Registro narrado/transcrito pelo Diego
+            <textarea
+              className="textarea mt-2 min-h-28"
+              value={draft.narrated_context ?? ""}
+              onChange={(event) => onDraftChange({ narrated_context: event.target.value })}
+              placeholder="Cole aqui a transcrição ou o resumo do áudio do Diego sobre o aluno: histórico, evolução, limitações, hábitos, preferências, contexto familiar/profissional e pontos de atenção."
+            />
+          </label>
+
+          <label className="block text-sm font-bold text-emerald-950 lg:col-span-2">
+            Síntese do histórico conhecido
+            <textarea
+              className="textarea mt-2 min-h-24"
+              value={draft.known_history_summary ?? ""}
+              onChange={(event) => onDraftChange({ known_history_summary: event.target.value })}
+              placeholder="Ex.: aluno treina há 2 anos, evoluiu em força, tem dificuldade de constância em semanas de trabalho intenso, prefere treino objetivo e precisa de mobilidade."
+            />
+          </label>
+
+          <label className="block text-sm font-bold text-emerald-950">
+            Próxima etapa sugerida da Jornada
+            <textarea
+              className="textarea mt-2 min-h-24"
+              value={draft.next_journey_step ?? ""}
+              onChange={(event) => onDraftChange({ next_journey_step: event.target.value })}
+              placeholder="Ex.: reavaliação, ajuste de programa, relatório de evolução, conversa sobre novo objetivo, convite para piloto."
+            />
+          </label>
+        </div>
+      </div>
+
       <button className="btn-admin-primary mt-4" type="button" onClick={onSaveCrm} disabled={isSaving}>
         {isSaving ? "Salvando..." : "Salvar acompanhamento"}
       </button>
@@ -634,6 +700,37 @@ function LeadCard({
       ) : null}
     </div>
   );
+}
+
+function buildAudioPrompt(lead: Lead) {
+  return `Você é um assistente de organização da Jornada Personal Extrema do Diego Montagnini.
+
+Vou colar abaixo a transcrição de um áudio gravado pelo Diego sobre ${lead.name}.
+
+Objetivo: transformar a fala em um cadastro útil, sem inventar informações e sem criar diagnóstico médico.
+
+Contexto atual do lead/aluno:
+- Nome: ${lead.name}
+- Público: ${lead.audience_slug}
+- Perfil detectado: ${lead.detected_profile}
+- Status atual: ${lead.lead_status}
+- Programa sugerido até agora: ${lead.program_suggested ?? "não informado"}
+
+Ao receber a transcrição, devolva em 5 blocos:
+1. Resumo do histórico conhecido pelo Diego.
+2. Informações importantes para não perguntar novamente ao aluno.
+3. Dores, desejos, limitações, preferências e contexto de rotina.
+4. Próxima etapa recomendada da Jornada Personal Extrema.
+5. Pontos que o Diego deve confirmar com cuidado, sem parecer que esqueceu o histórico do aluno.
+
+Cuidados:
+- Não invente dados.
+- Não faça diagnóstico médico.
+- Separe fato, hipótese e ponto a confirmar.
+- Use linguagem prática para colar no sistema.
+
+Transcrição do áudio:
+[COLE AQUI A TRANSCRIÇÃO]`;
 }
 
 function LeadsHelpModal({ onClose }: { onClose: () => void }) {
@@ -690,7 +787,9 @@ export default function LeadsPage() {
     <main className="admin-shell">
       <Header />
       <Suspense fallback={<LeadsFallback />}>
-        <LeadsContent />
+        <AdminAuthGuard>
+          <LeadsContent />
+        </AdminAuthGuard>
       </Suspense>
     </main>
   );

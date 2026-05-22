@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { buildFollowupSuggestion, getNextContactDate, getSuggestedProgram, getWeeklyBucket } from "@/lib/automation-rules";
 import { conversionStatusFromLeadStatus, leadStatusFromConversionStatus } from "@/lib/funnel";
-import { isValidAdminToken, createServiceClient } from "@/lib/supabase";
+import { isAuthorizedAdminRequest, createServiceClient } from "@/lib/supabase";
 import type { LeadSummary } from "@/lib/types";
 
 type LeadUpdateBody = {
@@ -19,12 +19,15 @@ type LeadUpdateBody = {
   lastFollowupSuggestion?: string | null;
   weeklyReportBucket?: string | null;
   lostReason?: string | null;
+  narratedContext?: string | null;
+  knownHistorySummary?: string | null;
+  nextJourneyStep?: string | null;
   markMessageSentNow?: boolean;
   generateFollowup?: boolean;
 };
 
 const leadSelect =
-  "id,audience_slug,name,whatsapp,detected_profile,interest_level,urgency_score,lead_status,priority,next_contact_at,internal_notes,delivered_offer,last_message_at,converted_at,conversion_status,program_suggested,followup_count,last_followup_suggestion,weekly_report_bucket,lost_reason,created_at";
+  "id,audience_slug,name,whatsapp,detected_profile,interest_level,urgency_score,lead_status,priority,next_contact_at,internal_notes,delivered_offer,last_message_at,converted_at,conversion_status,program_suggested,followup_count,last_followup_suggestion,weekly_report_bucket,lost_reason,narrated_context,known_history_summary,next_journey_step,created_at";
 
 function nullableText(value: string | null | undefined) {
   if (value === undefined) return undefined;
@@ -43,10 +46,8 @@ function nullableDate(value: string | null | undefined) {
 }
 
 export async function PATCH(request: Request) {
-  const url = new URL(request.url);
-
-  if (!isValidAdminToken(url.searchParams.get("token"))) {
-    return NextResponse.json({ error: "Token inválido." }, { status: 401 });
+  if (!(await isAuthorizedAdminRequest(request))) {
+    return NextResponse.json({ error: "Acesso não autorizado." }, { status: 401 });
   }
 
   const body = (await request.json()) as LeadUpdateBody;
@@ -107,6 +108,15 @@ export async function PATCH(request: Request) {
 
   const lostReason = nullableText(body.lostReason);
   if (lostReason !== undefined) update.lost_reason = lostReason;
+
+  const narratedContext = nullableText(body.narratedContext);
+  if (narratedContext !== undefined) update.narrated_context = narratedContext;
+
+  const knownHistorySummary = nullableText(body.knownHistorySummary);
+  if (knownHistorySummary !== undefined) update.known_history_summary = knownHistorySummary;
+
+  const nextJourneyStep = nullableText(body.nextJourneyStep);
+  if (nextJourneyStep !== undefined) update.next_journey_step = nextJourneyStep;
 
   if (typeof body.followupCount === "number") {
     update.followup_count = body.followupCount;

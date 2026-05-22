@@ -25,6 +25,9 @@ create table if not exists public.survey_responses (
   last_followup_suggestion text,
   weekly_report_bucket text,
   lost_reason text,
+  narrated_context text,
+  known_history_summary text,
+  next_journey_step text,
   created_at timestamptz not null default now()
 );
 
@@ -99,3 +102,8 @@ alter table public.lead_notes enable row level security;
 -- MVP: as escritas públicas são feitas pela API com service role.
 -- A leitura administrativa também é feita pela API com service role.
 -- Portanto, não criamos políticas públicas de select.
+
+-- Bloco atual: autenticação e memória narrada do Diego sobre alunos/leads.
+alter table public.survey_responses add column if not exists narrated_context text;
+alter table public.survey_responses add column if not exists known_history_summary text;
+alter table public.survey_responses add column if not exists next_journey_step text;

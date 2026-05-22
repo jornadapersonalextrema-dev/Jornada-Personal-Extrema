@@ -4,6 +4,8 @@ import Link from "next/link";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Header } from "@/components/Header";
+import { AdminAuthGuard } from "@/components/AdminAuthGuard";
+import { adminFetch, buildAdminApiUrl } from "@/lib/client-admin";
 import { oceanBluePrinciples, playbooks, statusFlow } from "@/lib/journey-playbook";
 
 type Lead = {
@@ -49,9 +51,7 @@ function AdminPesquisaContent() {
         setIsLoading(true);
         setError(null);
 
-        const response = await fetch(
-          `/api/admin/summary?token=${encodeURIComponent(token)}`,
-        );
+        const response = await adminFetch("/api/admin/summary", token);
 
         const data = (await response.json()) as Summary | { error?: string };
 
@@ -121,25 +121,28 @@ function AdminPesquisaContent() {
 
           <Link
             className="btn-admin-secondary"
-            href={`/admin/pesquisa-diego/leads?token=${encodeURIComponent(
-              token,
-            )}`}
+            href={buildAdminApiUrl("/admin/pesquisa-diego/leads", token)}
           >
             Ver leads
           </Link>
 
           <Link
             className="btn-admin-secondary"
-            href={`/admin/pesquisa-diego/dashboard?token=${encodeURIComponent(
-              token,
-            )}`}
+            href={buildAdminApiUrl("/admin/pesquisa-diego/dashboard", token)}
           >
             Dashboard semanal
           </Link>
 
+          <Link
+            className="btn-admin-secondary"
+            href={buildAdminApiUrl("/admin/pesquisa-diego/agenda", token)}
+          >
+            Agenda do dia
+          </Link>
+
           <a
             className="btn-admin-primary"
-            href={`/api/admin/export?token=${encodeURIComponent(token)}`}
+            href={buildAdminApiUrl("/api/admin/export", token)}
           >
             Exportar CSV
           </a>
@@ -393,7 +396,9 @@ export default function AdminPesquisaPage() {
     <main className="admin-shell">
       <Header />
       <Suspense fallback={<AdminPesquisaFallback />}>
-        <AdminPesquisaContent />
+        <AdminAuthGuard>
+          <AdminPesquisaContent />
+        </AdminAuthGuard>
       </Suspense>
     </main>
   );

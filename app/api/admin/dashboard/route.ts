@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { isFollowupOverdue, isWithoutRecentMessage } from "@/lib/automation-rules";
 import { conversionStages, getConversionRate, isConvertedLead, isLostLead } from "@/lib/funnel";
-import { isValidAdminToken, createServiceClient } from "@/lib/supabase";
+import { isAuthorizedAdminRequest, createServiceClient } from "@/lib/supabase";
 import type { DashboardSummary, LeadSummary } from "@/lib/types";
 
 const leadSelect =
-  "id,audience_slug,name,whatsapp,detected_profile,interest_level,urgency_score,lead_status,priority,next_contact_at,internal_notes,delivered_offer,last_message_at,converted_at,conversion_status,program_suggested,followup_count,last_followup_suggestion,weekly_report_bucket,lost_reason,created_at";
+  "id,audience_slug,name,whatsapp,detected_profile,interest_level,urgency_score,lead_status,priority,next_contact_at,internal_notes,delivered_offer,last_message_at,converted_at,conversion_status,program_suggested,followup_count,last_followup_suggestion,weekly_report_bucket,lost_reason,narrated_context,known_history_summary,next_journey_step,created_at";
 
 function countBy<T extends string>(items: T[]) {
   return items.reduce<Record<string, number>>((acc, item) => {
@@ -32,10 +32,8 @@ function after(value: string | null | undefined, reference: Date) {
 }
 
 export async function GET(request: Request) {
-  const url = new URL(request.url);
-
-  if (!isValidAdminToken(url.searchParams.get("token"))) {
-    return NextResponse.json({ error: "Token inválido." }, { status: 401 });
+  if (!(await isAuthorizedAdminRequest(request))) {
+    return NextResponse.json({ error: "Acesso não autorizado." }, { status: 401 });
   }
 
   const supabase = createServiceClient();

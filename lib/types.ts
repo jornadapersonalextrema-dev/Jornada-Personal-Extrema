@@ -64,6 +64,9 @@ export type LeadCrmFields = {
   last_followup_suggestion?: string | null;
   weekly_report_bucket?: string | null;
   lost_reason?: string | null;
+  narrated_context?: string | null;
+  known_history_summary?: string | null;
+  next_journey_step?: string | null;
 };
 
 export type LeadSummary = LeadCrmFields & {

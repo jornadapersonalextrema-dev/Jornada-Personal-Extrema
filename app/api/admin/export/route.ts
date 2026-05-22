@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isValidAdminToken, createServiceClient } from "@/lib/supabase";
+import { isAuthorizedAdminRequest, createServiceClient } from "@/lib/supabase";
 
 function csvEscape(value: unknown) {
   const text = Array.isArray(value) ? value.join(" | ") : String(value ?? "");
@@ -7,10 +7,8 @@ function csvEscape(value: unknown) {
 }
 
 export async function GET(request: Request) {
-  const url = new URL(request.url);
-
-  if (!isValidAdminToken(url.searchParams.get("token"))) {
-    return NextResponse.json({ error: "Token inválido." }, { status: 401 });
+  if (!(await isAuthorizedAdminRequest(request))) {
+    return NextResponse.json({ error: "Acesso não autorizado." }, { status: 401 });
   }
 
   const supabase = createServiceClient();
@@ -43,6 +41,9 @@ export async function GET(request: Request) {
     "weekly_report_bucket",
     "lost_reason",
     "internal_notes",
+    "narrated_context",
+    "known_history_summary",
+    "next_journey_step",
     "free_offer",
     "whatsapp_text",
   ];
@@ -74,6 +75,9 @@ export async function GET(request: Request) {
       row.weekly_report_bucket,
       row.lost_reason,
       row.internal_notes,
+      row.narrated_context,
+      row.known_history_summary,
+      row.next_journey_step,
       message?.free_offer_suggestion,
       message?.whatsapp_text,
     ]
