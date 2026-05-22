@@ -107,3 +107,55 @@ alter table public.lead_notes enable row level security;
 alter table public.survey_responses add column if not exists narrated_context text;
 alter table public.survey_responses add column if not exists known_history_summary text;
 alter table public.survey_responses add column if not exists next_journey_step text;
+
+-- Módulo de alunos atuais e memória narrada.
+create table if not exists public.journey_clients (
+  id uuid primary key default gen_random_uuid(),
+  full_name text not null,
+  whatsapp text,
+  email text,
+  birth_date date,
+  age_range text,
+  city text,
+  neighborhood text,
+  current_status text default 'ativo',
+  client_type text default 'aluno_atual',
+  training_location text,
+  weekly_frequency text,
+  usual_days text,
+  usual_time text,
+  main_goal text,
+  secondary_goals text,
+  known_limitations text,
+  health_notes text,
+  training_history text,
+  diego_memory_notes text,
+  audio_transcription text,
+  structured_summary text,
+  next_journey_step text,
+  suggested_program text,
+  tech_opportunities text,
+  personalized_survey_status text default 'nao_enviada',
+  personalized_survey_link text,
+  last_contact_at timestamptz,
+  next_contact_at timestamptz,
+  priority text default 'media',
+  internal_notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.journey_clients enable row level security;
+
+create or replace function public.set_updated_at()
+returns trigger as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists trg_journey_clients_updated_at on public.journey_clients;
+create trigger trg_journey_clients_updated_at
+before update on public.journey_clients
+for each row execute function public.set_updated_at();

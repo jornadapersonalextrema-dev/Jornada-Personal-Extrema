@@ -135,6 +135,13 @@ function AdminPesquisaContent() {
 
           <Link
             className="btn-admin-secondary"
+            href={buildAdminApiUrl("/admin/pesquisa-diego/alunos", token)}
+          >
+            Alunos atuais
+          </Link>
+
+          <Link
+            className="btn-admin-secondary"
             href={buildAdminApiUrl("/admin/pesquisa-diego/agenda", token)}
           >
             Agenda do dia
@@ -174,11 +181,11 @@ function AdminPesquisaContent() {
           <p className="label-pill">Rotina do Diego</p>
           <h2 className="mt-3 text-2xl font-black">Uso prático no dia a dia</h2>
           <ol className="mt-4 space-y-2 text-sm leading-6 text-slate-700">
-            <li><strong>1.</strong> Ver novos leads diariamente.</li>
-            <li><strong>2.</strong> Priorizar alto interesse e comentários abertos.</li>
-            <li><strong>3.</strong> Copiar mensagem e abrir WhatsApp.</li>
-            <li><strong>4.</strong> Entregar a oferta gratuita certa.</li>
-            <li><strong>5.</strong> Atualizar status após cada contato.</li>
+            <li><strong>1.</strong> Abrir a Agenda antes de dispersar.</li>
+            <li><strong>2.</strong> Cadastrar alunos atuais com memória narrada.</li>
+            <li><strong>3.</strong> Ver novos leads e priorizar alto interesse.</li>
+            <li><strong>4.</strong> Copiar mensagem e abrir WhatsApp.</li>
+            <li><strong>5.</strong> Atualizar status e próximo contato após cada interação.</li>
           </ol>
         </div>
       </div>

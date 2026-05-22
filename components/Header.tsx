@@ -43,6 +43,7 @@ export function Header() {
       leads: `/admin/pesquisa-diego/leads${suffix}`,
       dashboard: `/admin/pesquisa-diego/dashboard${suffix}`,
       agenda: `/admin/pesquisa-diego/agenda${suffix}`,
+      alunos: `/admin/pesquisa-diego/alunos${suffix}`,
     };
   }, [legacyToken]);
 
@@ -91,7 +92,10 @@ export function Header() {
               <Link href={navHref.dashboard} className="hidden hover:text-emerald-300 md:inline-flex">
                 Dashboard
               </Link>
-              <Link href={navHref.agenda} className="hidden hover:text-emerald-300 lg:inline-flex">
+              <Link href={navHref.alunos} className="hidden hover:text-emerald-300 lg:inline-flex">
+                Alunos
+              </Link>
+              <Link href={navHref.agenda} className="hidden hover:text-emerald-300 xl:inline-flex">
                 Agenda
               </Link>
               <button className="header-action" type="button" onClick={logout}>
